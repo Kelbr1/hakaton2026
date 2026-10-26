@@ -63,6 +63,17 @@ from .models import (
     verify_password,
 )
 
+ROOT_DIR: Path = Path(__file__).resolve().parent.parent
+
+
+def _to_rel_path(path: Any) -> str:
+    p = Path(path).resolve()
+    try:
+        rel = p.relative_to(ROOT_DIR)
+        return str(rel).replace("\\", "/")
+    except ValueError:
+        return str(p).replace("\\", "/")
+
 
 class AskQuestionRequest(BaseModel):
     question: str
@@ -156,7 +167,7 @@ def _run_ai_pipeline(lecture_id: int) -> None:
                 audio_id=f"lec_{lecture.id}",
             )
             duration = get_video_duration(lecture.video_path)
-            lecture.audio_path = str(audio_file)
+            lecture.audio_path = _to_rel_path(audio_file)
             lecture.duration = duration
             session.add(lecture)
             session.commit()
@@ -256,7 +267,7 @@ def process_url_pipeline(
                 url=url,
                 video_id=f"lec_{lecture.id}",
             )
-            lecture.video_path = str(video_file)
+            lecture.video_path = _to_rel_path(video_file)
             if not custom_title or not custom_title.strip():
                 lecture.title = fetched_title
             session.add(lecture)
@@ -630,7 +641,7 @@ def upload_lecture(
             upload_file=file,
             video_id=f"lec_{lecture.id}",
         )
-        lecture.video_path = str(video_path)
+        lecture.video_path = _to_rel_path(video_path)
         session.add(lecture)
         session.commit()
         session.refresh(lecture)

@@ -79,6 +79,16 @@ def find_term_timecode(
         if stems[0] in seg_stems:
             return round(s.start_time, 1)
 
+    # 5. Для составных терминов: совпадение любого значимого корня (например, фамилии или определяющего слова)
+    if len(stems) >= 2:
+        for stem in reversed(stems):
+            if len(stem) >= 4 and stem not in {"тока", "срок", "часть", "вещь", "общий", "направление"}:
+                for s in segments:
+                    seg_tokens = re.findall(r"[а-яa-z0-9]+", s.text.lower())
+                    seg_stems = [russian_stem(t) for t in seg_tokens]
+                    if stem in seg_stems:
+                        return round(s.start_time, 1)
+
     return fallback_time
 
 
