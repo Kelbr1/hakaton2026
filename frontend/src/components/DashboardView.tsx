@@ -1,0 +1,1175 @@
+import React, { useState, useEffect, useRef, useMemo } from "react"
+import { motion, AnimatePresence } from "framer-motion"
+import {
+  Search,
+  Clock,
+  Play,
+  Film,
+  Link,
+  Trash2,
+  Sparkles,
+  ChevronRight,
+  AlertTriangle,
+  Loader2,
+  Calendar,
+  X,
+  RotateCw,
+  Star,
+  Plus,
+  Check,
+  Tag,
+  Pencil,
+  ChevronDown,
+  ArrowUpDown,
+} from "lucide-react"
+import { api } from "../api/client"
+import { formatTimecode, formatDate } from "../utils/format"
+import { CATEGORY_COLOR_PRESETS, getCategoryHex } from "../utils/colors"
+import { ConfirmModal } from "./ConfirmModal"
+import { AssignCategoryModal } from "./AssignCategoryModal"
+import type { Lecture, SearchResultItem, Category, User } from "../types"
+
+export type SortOption =
+  | "date_desc"
+  | "date_asc"
+  | "title_asc"
+  | "duration_desc"
+  | "duration_asc"
+
+export const SORT_OPTIONS: { id: SortOption; label: string }[] = [
+  { id: "date_desc", label: "Сначала новые" },
+  { id: "date_asc", label: "Сначала старые" },
+  { id: "title_asc", label: "По названию (А-Я)" },
+  { id: "duration_desc", label: "По длительности (убыв.)" },
+  { id: "duration_asc", label: "По длительности (возр.)" },
+]
+
+interface DashboardViewProps {
+  lectures: Lecture[]
+  categories: Category[]
+  selectedCategoryId: number | null
+  onSelectCategory: (categoryId: number | null) => void
+  onlyFavorites: boolean
+  onToggleOnlyFavorites: (onlyFav: boolean) => void
+  onCreateCategory: (name: string, color?: string) => Promise<Category | void>
+  onUpdateCategory: (id: number, name: string, color?: string) => Promise<Category | void>
+  onDeleteCategory: (id: number) => Promise<void>
+  onAssignCategory: (lectureId: number, categoryId: number | null) => Promise<void>
+  onToggleFavorite: (lectureId: number) => void
+  currentUser: User | null
+  onOpenAuth: (message?: string) => void
+  onSelectLecture: (lectureId: number, initialTimecode?: number) => void
+  onDeleteLecture: (lectureId: number) => void
+  onRetryLecture?: (lectureId: number) => void
+  onOpenUpload: () => void
+}
+
+const PIPELINE_STEPS = [
+  { key: "extracting_audio", label: "Извлечение аудио" },
+  { key: "transcribing", label: "Транскрибация речи" },
+  { key: "indexing", label: "Семантический индекс" },
+  { key: "summarizing", label: "Генерация конспекта" },
+]
+
+export const DashboardView: React.FC<DashboardViewProps> = ({
+  lectures,
+  categories,
+  selectedCategoryId,
+  onSelectCategory,
+  onlyFavorites,
+  onToggleOnlyFavorites,
+  onCreateCategory,
+  onUpdateCategory,
+  onDeleteCategory,
+  onAssignCategory,
+  onToggleFavorite,
+  currentUser,
+  onOpenAuth,
+  onSelectLecture,
+  onDeleteLecture,
+  onRetryLecture,
+  onOpenUpload,
+}) => {
+  const [searchQuery, setSearchQuery] = useState<string>("")
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([])
+  const [isSearching, setIsSearching] = useState<boolean>(false)
+  const searchTimeoutRef = useRef<number | null>(null)
+  const spotlightInputRef = useRef<HTMLInputElement>(null)
+
+  // Модальные окна
+  const [lectureToDelete, setLectureToDelete] = useState<Lecture | null>(null)
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null)
+  const [lectureToAssignCategory, setLectureToAssignCategory] = useState<Lecture | null>(null)
+
+  // Управление категориями (создание и редактирование)
+  const [isCreatingCategory, setIsCreatingCategory] = useState<boolean>(false)
+  const [newCatName, setNewCatName] = useState<string>("")
+  const [newCatColor, setNewCatColor] = useState<string>("#3b82f6")
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
+  const [editingCatName, setEditingCatName] = useState<string>("")
+  const [editingCatColor, setEditingCatColor] = useState<string>("#3b82f6")
+  const [isSubmittingCat, setIsSubmittingCat] = useState<boolean>(false)
+
+  // Сортировка лекций
+  const [sortBy, setSortBy] = useState<SortOption>("date_desc")
+  const [isSortOpen, setIsSortOpen] = useState<boolean>(false)
+
+  // Горячая клавиша Cmd/Ctrl+K или / для быстрого фокуса на поиске Spotlight
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      const isTyping =
+        activeEl?.tagName === "INPUT" ||
+        activeEl?.tagName === "TEXTAREA"
+
+      if ((e.key === "k" && (e.metaKey || e.ctrlKey)) || (e.key === "/" && !isTyping)) {
+        e.preventDefault()
+        spotlightInputRef.current?.focus()
+      }
+    }
+
+    window.addEventListener("keydown", handleGlobalKeyDown)
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown)
+  }, [])
+
+  // Дебаунс-поиск по смыслу по всем лекциям
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      window.clearTimeout(searchTimeoutRef.current)
+    }
+
+    const trimmed = searchQuery.trim()
+    if (!trimmed) {
+      setSearchResults([])
+      setIsSearching(false)
+      return
+    }
+
+    setIsSearching(true)
+    searchTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        const results = await api.search(trimmed, undefined, 8)
+        setSearchResults(results)
+      } catch (err) {
+        console.error("Semantic search error:", err)
+      } finally {
+        setIsSearching(false)
+      }
+    }, 280)
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        window.clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [searchQuery])
+
+  // Фильтрация и сортировка лекций по категории, избранному и выбранному критерию
+  const filteredLectures = useMemo(() => {
+    const list = lectures.filter((lecture) => {
+      if (onlyFavorites && !lecture.is_favorite) {
+        return false
+      }
+      if (selectedCategoryId !== null && lecture.category_id !== selectedCategoryId) {
+        return false
+      }
+      return true
+    })
+
+    return [...list].sort((a, b) => {
+      if (sortBy === "date_desc") {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      }
+      if (sortBy === "date_asc") {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      }
+      if (sortBy === "title_asc") {
+        return a.title.localeCompare(b.title, "ru")
+      }
+      if (sortBy === "duration_desc") {
+        return (b.duration || 0) - (a.duration || 0)
+      }
+      if (sortBy === "duration_asc") {
+        return (a.duration || 0) - (b.duration || 0)
+      }
+      return 0
+    })
+  }, [lectures, onlyFavorites, selectedCategoryId, sortBy])
+
+  const favoritesCount = useMemo(() => {
+    return lectures.filter((l) => l.is_favorite).length
+  }, [lectures])
+
+  const selectedCategory = useMemo(() => {
+    return categories.find((c) => c.id === selectedCategoryId) || null
+  }, [categories, selectedCategoryId])
+
+  const handleCreateCategorySubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    const trimmed = newCatName.trim()
+    if (!trimmed) {
+      setIsCreatingCategory(false)
+      return
+    }
+
+    setIsSubmittingCat(true)
+    try {
+      const created = await onCreateCategory(trimmed, newCatColor)
+      setNewCatName("")
+      setNewCatColor("#3b82f6")
+      setIsCreatingCategory(false)
+      if (created && created.id) {
+        onToggleOnlyFavorites(false)
+        onSelectCategory(created.id)
+      }
+    } catch (err) {
+      console.error("Failed to create category:", err)
+    } finally {
+      setIsSubmittingCat(false)
+    }
+  }
+
+  const handleUpdateCategorySubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!editingCategoryId) return
+    const trimmed = editingCatName.trim()
+    if (!trimmed) {
+      setEditingCategoryId(null)
+      return
+    }
+
+    setIsSubmittingCat(true)
+    try {
+      await onUpdateCategory(editingCategoryId, trimmed, editingCatColor)
+      setEditingCategoryId(null)
+      setEditingCatName("")
+      setEditingCatColor("#3b82f6")
+    } catch (err) {
+      console.error("Failed to update category:", err)
+    } finally {
+      setIsSubmittingCat(false)
+    }
+  }
+
+  const handleFavoriteClick = (e: React.MouseEvent, lectureId: number) => {
+    e.stopPropagation()
+    if (!currentUser) {
+      onOpenAuth("Войдите в систему, чтобы добавлять лекции в избранное")
+      return
+    }
+    onToggleFavorite(lectureId)
+  }
+
+  const handleUploadClick = () => {
+    if (!currentUser) {
+      onOpenAuth("Загрузка лекций доступна только авторизованным пользователям")
+      return
+    }
+    onOpenUpload()
+  }
+
+  const getStepIndex = (status: string): number => {
+    switch (status) {
+      case "uploading":
+      case "extracting_audio":
+        return 0
+      case "transcribing":
+        return 1
+      case "indexing":
+        return 2
+      case "summarizing":
+        return 3
+      case "ready":
+        return 4
+      default:
+        return 0
+    }
+  }
+
+  return (
+    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10 transition-colors duration-300">
+      {/* 1. Глобальный семантический поиск в стиле Apple Spotlight */}
+      <section className="relative max-w-3xl mx-auto">
+        <div className="text-center mb-6 space-y-2">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-white transition-colors">
+            Интеллектуальный поиск по лекциям
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-normal transition-colors">
+            Ищите по смыслу тем, формул и идей во всех видеоматериалах курса
+          </p>
+        </div>
+
+        {/* Инпут поиска в стиле Spotlight */}
+        <div className="relative group">
+          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-blue-600/20 via-indigo-500/15 to-cyan-500/20 dark:from-blue-600/30 dark:via-indigo-500/20 dark:to-cyan-500/30 opacity-70 blur-xl group-hover:opacity-100 transition duration-500" />
+          <div className="relative flex items-center bg-white/95 dark:bg-[#121215]/90 backdrop-blur-2xl border border-zinc-200/90 dark:border-white/[0.12] rounded-2xl shadow-xl dark:shadow-2xl px-4 py-3.5 focus-within:border-blue-500/80 transition-all">
+            <Search className="w-5 h-5 text-zinc-400 dark:text-zinc-500 mr-3 shrink-0" />
+            <input
+              ref={spotlightInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Например: как устроен механизм внимания в трансформерах..."
+              className="w-full bg-transparent text-sm sm:text-base text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none"
+            />
+            {isSearching ? (
+              <Loader2 className="w-5 h-5 text-blue-500 dark:text-blue-400 animate-spin shrink-0 ml-2" />
+            ) : searchQuery ? (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="w-5 h-5 text-zinc-400 hover:text-zinc-700 dark:hover:text-white shrink-0 ml-2 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Результаты семантического поиска */}
+        <AnimatePresence>
+          {searchQuery.trim().length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="mt-4 space-y-2.5"
+            >
+              <div className="flex items-center justify-between px-1 text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+                <span>
+                  {searchResults.length > 0
+                    ? `Найдено смысловых фрагментов: ${searchResults.length}`
+                    : isSearching
+                    ? "Идет семантический поиск по векторной базе..."
+                    : "Совпадений не обнаружено"}
+                </span>
+                <span className="text-[11px] font-mono text-blue-600 dark:text-blue-400">
+                  Sentence-Transformers 384D
+                </span>
+              </div>
+
+              {searchResults.map((hit) => (
+                <motion.div
+                  key={hit.chunk_id}
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  whileHover={{ scale: 1.005 }}
+                  onClick={() => onSelectLecture(hit.lecture_id, hit.start_time)}
+                  className="p-4 rounded-2xl bg-white dark:bg-[#121215]/80 hover:bg-zinc-50 dark:hover:bg-[#18181C] border border-zinc-200/90 dark:border-white/[0.08] hover:border-zinc-300 dark:hover:border-white/[0.18] transition-all cursor-pointer shadow-md dark:shadow-lg group"
+                >
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2 truncate">
+                      <Film className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 shrink-0" />
+                      <span className="text-xs font-semibold text-zinc-900 dark:text-white truncate">
+                        {hit.lecture_title}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                        {hit.score}% по смыслу
+                      </span>
+
+                      <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-zinc-100 dark:bg-white/[0.08] text-zinc-800 dark:text-white border border-zinc-200 dark:border-white/[0.1] flex items-center gap-1 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                        <Play className="w-2.5 h-2.5 fill-current" />
+                        [{formatTimecode(hit.start_time)}]
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-relaxed">
+                    «{hit.text}»
+                  </p>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </section>
+
+      {/* 2. Основная область: Левый сайдбар (Категории + Избранное) и Правая сетка лекций */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* ================= ЛЕВАЯ КОЛОНКА / САЙДБАР (3 колонки) ================= */}
+        <aside className="lg:col-span-3 space-y-4 lg:sticky lg:top-24">
+          <div className="bg-white/90 dark:bg-[#121215]/90 backdrop-blur-2xl border border-zinc-200/80 dark:border-white/[0.08] rounded-3xl p-3.5 shadow-lg dark:shadow-xl space-y-5 transition-colors">
+            {/* Группа: Библиотека */}
+            <div className="space-y-1">
+              <div className="px-3 pb-1 text-[11px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider font-semibold">
+                Библиотека
+              </div>
+
+              {/* Все лекции */}
+              <button
+                type="button"
+                onClick={() => {
+                  onToggleOnlyFavorites(false)
+                  onSelectCategory(null)
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition-all cursor-pointer ${
+                  !onlyFavorites && selectedCategoryId === null
+                    ? "bg-zinc-900 text-white dark:bg-white dark:text-black font-semibold shadow-md"
+                    : "text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Film className="w-4 h-4 shrink-0" />
+                  <span>Все лекции</span>
+                </div>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                    !onlyFavorites && selectedCategoryId === null
+                      ? "bg-white/20 text-white dark:bg-black/10 dark:text-black font-semibold"
+                      : "bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-400"
+                  }`}
+                >
+                  {lectures.length}
+                </span>
+              </button>
+
+              {/* Избранное */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!currentUser && !onlyFavorites) {
+                    onOpenAuth("Войдите в личный профиль, чтобы смотреть избранные лекции")
+                    return
+                  }
+                  onToggleOnlyFavorites(!onlyFavorites)
+                  if (!onlyFavorites) onSelectCategory(null)
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition-all cursor-pointer ${
+                  onlyFavorites
+                    ? "bg-amber-400 text-black font-semibold shadow-md shadow-amber-400/20"
+                    : "text-zinc-700 dark:text-zinc-300 hover:text-amber-500 dark:hover:text-amber-300 hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Star
+                    className={`w-4 h-4 shrink-0 ${
+                      onlyFavorites ? "fill-black text-black" : "text-amber-500 dark:text-amber-400"
+                    }`}
+                  />
+                  <span>Избранное</span>
+                </div>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                    onlyFavorites
+                      ? "bg-black/15 text-black font-semibold"
+                      : "bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-400"
+                  }`}
+                >
+                  {favoritesCount}
+                </span>
+              </button>
+            </div>
+
+            {/* Разделитель */}
+            <div className="h-[1px] bg-zinc-200/70 dark:bg-white/[0.06] mx-1" />
+
+            {/* Группа: Категории */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-3 pb-1">
+                <span className="text-[11px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider font-semibold">
+                  Категории
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!currentUser) {
+                      onOpenAuth("Авторизуйтесь, чтобы создавать категории")
+                      return
+                    }
+                    setIsCreatingCategory(true)
+                  }}
+                  title="Добавить категорию"
+                  className="w-5 h-5 rounded-md hover:bg-zinc-100 dark:hover:bg-white/[0.08] text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Форма создания новой категории */}
+              {isCreatingCategory && (
+                <form
+                  onSubmit={handleCreateCategorySubmit}
+                  className="p-2.5 bg-zinc-50 dark:bg-black/50 border border-blue-500/40 rounded-2xl shadow-inner mb-2 space-y-2"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      placeholder="Название категории..."
+                      disabled={isSubmittingCat}
+                      className="flex-1 bg-transparent text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none px-1"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSubmittingCat || !newCatName.trim()}
+                      className="w-6 h-6 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                      title="Сохранить"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingCategory(false)
+                        setNewCatName("")
+                        setNewCatColor("#3b82f6")
+                      }}
+                      className="w-6 h-6 rounded-lg bg-zinc-200 dark:bg-white/[0.08] hover:bg-zinc-300 dark:hover:bg-white/[0.15] text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                      title="Отмена"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Выбор цвета новой категории */}
+                  <div className="flex items-center justify-between pt-1.5 border-t border-zinc-200/60 dark:border-white/[0.06]">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">Цвет метки:</span>
+                    <div className="flex items-center gap-1.5">
+                      {CATEGORY_COLOR_PRESETS.map((preset) => {
+                        const isSelected = newCatColor === preset.hex
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => setNewCatColor(preset.hex)}
+                            title={preset.label}
+                            className={`w-3.5 h-3.5 rounded-full transition-transform cursor-pointer relative ${
+                              isSelected
+                                ? "scale-125 ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#121215] ring-blue-500"
+                                : "hover:scale-110 opacity-70 hover:opacity-100"
+                            }`}
+                            style={{ backgroundColor: preset.hex }}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* Список категорий с действиями переименования и удаления */}
+              <div className="space-y-1">
+                {categories.map((cat) => {
+                  const isSelected = !onlyFavorites && selectedCategoryId === cat.id
+                  const count =
+                    cat.lectures_count !== undefined
+                      ? cat.lectures_count
+                      : lectures.filter((l) => l.category_id === cat.id).length
+                  const isEditing = editingCategoryId === cat.id
+
+                  if (isEditing) {
+                    return (
+                      <form
+                        key={cat.id}
+                        onSubmit={handleUpdateCategorySubmit}
+                        className="p-2.5 bg-zinc-50 dark:bg-black/60 border border-amber-500/50 rounded-2xl shadow-inner space-y-2 mb-1"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingCatName}
+                            onChange={(e) => setEditingCatName(e.target.value)}
+                            disabled={isSubmittingCat}
+                            className="flex-1 bg-transparent text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none px-1"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isSubmittingCat || !editingCatName.trim()}
+                            className="w-6 h-6 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                            title="Сохранить"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCategoryId(null)
+                              setEditingCatName("")
+                              setEditingCatColor("#3b82f6")
+                            }}
+                            className="w-6 h-6 rounded-lg bg-zinc-200 dark:bg-white/[0.08] hover:bg-zinc-300 dark:hover:bg-white/[0.15] text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                            title="Отмена"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Выбор цвета при редактировании категории */}
+                        <div className="flex items-center justify-between pt-1.5 border-t border-zinc-200/60 dark:border-white/[0.06]">
+                          <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">Цвет:</span>
+                          <div className="flex items-center gap-1.5">
+                            {CATEGORY_COLOR_PRESETS.map((preset) => {
+                              const isSelected = editingCatColor === preset.hex
+                              return (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  onClick={() => setEditingCatColor(preset.hex)}
+                                  title={preset.label}
+                                  className={`w-3.5 h-3.5 rounded-full transition-transform cursor-pointer relative ${
+                                    isSelected
+                                      ? "scale-125 ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#121215] ring-amber-500"
+                                      : "hover:scale-110 opacity-70 hover:opacity-100"
+                                  }`}
+                                  style={{ backgroundColor: preset.hex }}
+                                />
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </form>
+                    )
+                  }
+
+                  return (
+                    <div
+                      key={cat.id}
+                      onClick={() => {
+                        onToggleOnlyFavorites(false)
+                        onSelectCategory(cat.id)
+                      }}
+                      className={`group w-full flex items-center justify-between px-3.5 py-2 rounded-2xl text-xs font-medium transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
+                          : "text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate mr-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: getCategoryHex(cat.color) }}
+                        />
+                        <span className="truncate">{cat.name}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Бейдж количества */}
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-mono transition-opacity ${
+                            isSelected
+                              ? "bg-white/20 text-white"
+                              : "bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-400 group-hover:opacity-40"
+                          }`}
+                        >
+                          {count}
+                        </span>
+
+                        {/* Кнопки переименования и удаления при ховере */}
+                        <div
+                          className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!currentUser) {
+                                onOpenAuth("Авторизуйтесь, чтобы переименовывать категории")
+                                return
+                              }
+                              setEditingCategoryId(cat.id)
+                              setEditingCatName(cat.name)
+                              setEditingCatColor(getCategoryHex(cat.color))
+                            }}
+                            title="Переименовать категорию"
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                              isSelected
+                                ? "text-white/80 hover:text-white hover:bg-white/20"
+                                : "text-zinc-400 hover:text-amber-500 hover:bg-zinc-200 dark:hover:text-amber-300 dark:hover:bg-white/[0.08]"
+                            }`}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!currentUser) {
+                                onOpenAuth("Авторизуйтесь, чтобы удалять категории")
+                                return
+                              }
+                              setCategoryToDelete(cat)
+                            }}
+                            title="Удалить категорию"
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                              isSelected
+                                ? "text-white/80 hover:text-white hover:bg-white/20"
+                                : "text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-500/10"
+                            }`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {categories.length === 0 && !isCreatingCategory && (
+                  <div className="px-3 py-3 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                    Нет созданных категорий
+                  </div>
+                )}
+              </div>
+
+              {/* Кнопка создания категории снизу */}
+              {!isCreatingCategory && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!currentUser) {
+                      onOpenAuth("Авторизуйтесь, чтобы создавать категории")
+                      return
+                    }
+                    setIsCreatingCategory(true)
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-2xl text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 bg-zinc-50 dark:bg-white/[0.02] hover:bg-zinc-100 dark:hover:bg-white/[0.05] border border-dashed border-zinc-200 dark:border-white/[0.1] transition-all cursor-pointer mt-2"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Новая категория</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        {/* ================= ПРАВАЯ ОБЛАСТЬ: СЕТКА ЛЕКЦИЙ (9 колонок) ================= */}
+        <section className="lg:col-span-9 space-y-6">
+          {/* Заголовок текущего раздела */}
+          <div className="flex items-center justify-between flex-wrap gap-4 pb-3 border-b border-zinc-200/80 dark:border-white/[0.06] transition-colors">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2.5 transition-colors">
+                {onlyFavorites ? (
+                  <>
+                    <Star className="w-5 h-5 text-amber-500 dark:text-amber-400 fill-amber-500 dark:fill-amber-400" />
+                    <span>Избранные лекции</span>
+                  </>
+                ) : selectedCategory ? (
+                  <>
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: getCategoryHex(selectedCategory.color) }}
+                    />
+                    <span>{selectedCategory.name}</span>
+                  </>
+                ) : (
+                  <>
+                    <Film className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <span>Все видеолекции</span>
+                  </>
+                )}
+
+                <span className="text-xs font-mono font-normal text-zinc-600 dark:text-zinc-400 px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200 dark:border-white/[0.08]">
+                  {filteredLectures.length}
+                </span>
+              </h2>
+
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 transition-colors">
+                {onlyFavorites
+                  ? "Лекции, отмеченные звездочкой для быстрого повторения"
+                  : selectedCategory
+                  ? `Материалы категории «${selectedCategory.name}» с семантическим поиском`
+                  : "Синхронизированные конспекты, оглавление и семантический ИИ-анализ"}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              {/* Выпадающий список сортировки */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsSortOpen(!isSortOpen)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-100 dark:bg-white/[0.05] hover:bg-zinc-200 dark:hover:bg-white/[0.08] text-xs font-medium text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-white/[0.08] transition-all cursor-pointer"
+                  title="Сортировка лекций"
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+                  <span className="hidden sm:inline">
+                    {SORT_OPTIONS.find((s) => s.id === sortBy)?.label || "Сортировка"}
+                  </span>
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
+
+                {isSortOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 w-52 py-1.5 rounded-2xl bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-white/[0.1] shadow-2xl z-30 space-y-0.5">
+                    <div className="px-3 py-1 text-[10px] uppercase font-semibold text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-white/[0.06]">
+                      Сортировка
+                    </div>
+                    {SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          setSortBy(opt.id)
+                          setIsSortOpen(false)
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors cursor-pointer ${
+                          sortBy === opt.id
+                            ? "text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-500/10"
+                            : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        {sortBy === opt.id && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleUploadClick}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition-all shadow-glow cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Добавить лекцию</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Сетка карточек лекций */}
+          {filteredLectures.length === 0 ? (
+            <div className="text-center py-16 border border-dashed border-zinc-200 dark:border-white/[0.08] rounded-3xl bg-white/40 dark:bg-white/[0.01] p-8 space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-white/[0.05] text-zinc-400 dark:text-zinc-500 flex items-center justify-center mx-auto">
+                {onlyFavorites ? (
+                  <Star className="w-6 h-6 text-amber-500/70 dark:text-amber-400/60" />
+                ) : (
+                  <Film className="w-6 h-6" />
+                )}
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
+                  {onlyFavorites
+                    ? "У вас пока нет лекций в избранном"
+                    : selectedCategoryId !== null
+                    ? "В выбранной категории пока нет лекций"
+                    : "В библиотеке пока нет лекций"}
+                </h3>
+                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                  {onlyFavorites
+                    ? "Нажимайте на звездочку на карточке любой лекции, чтобы добавить её в избранное для быстрого доступа."
+                    : selectedCategoryId !== null
+                    ? "Загрузите новую лекцию в эту категорию или перенесите существующую."
+                    : "Загрузите первый видеофайл или укажите ссылку на YouTube/Vimeo, чтобы запустить автономный ИИ-анализ."}
+                </p>
+              </div>
+              {onlyFavorites ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleOnlyFavorites(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-medium bg-zinc-100 dark:bg-white/[0.06] hover:bg-zinc-200 dark:hover:bg-white/[0.1] text-zinc-800 dark:text-white transition-all border border-zinc-200 dark:border-white/[0.08] cursor-pointer inline-flex items-center gap-2"
+                >
+                  <span>Ко всем лекциям</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleUploadClick}
+                  className="px-4 py-2 rounded-xl text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-glow inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Загрузить лекцию</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {filteredLectures.map((lecture) => {
+                const isReady = lecture.status === "ready"
+                const isError = lecture.status === "error"
+                const currentStepIdx = getStepIndex(lecture.status)
+                const isFav = lecture.is_favorite ?? false
+
+                // Сохраненный прогресс просмотра из localStorage
+                const savedProg = localStorage.getItem(`cyberbreak_progress_${lecture.id}`)
+                const progressSec = savedProg ? parseFloat(savedProg) : 0
+                const hasProgress = progressSec > 5 && !!lecture.duration && lecture.duration > 0
+                const progressPercent = hasProgress
+                  ? Math.min(100, Math.round((progressSec / (lecture.duration || 1)) * 100))
+                  : 0
+
+                return (
+                  <motion.div
+                    key={lecture.id}
+                    whileHover={{ y: -3 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                    onClick={() => {
+                      if (isReady) {
+                        onSelectLecture(lecture.id)
+                      }
+                    }}
+                    className={`relative flex flex-col justify-between p-5 rounded-3xl bg-white dark:bg-[#121215] border border-zinc-200/80 dark:border-white/[0.08] transition-all shadow-sm dark:shadow-md ${
+                      isReady
+                        ? "hover:border-zinc-300 dark:hover:border-white/[0.2] hover:shadow-xl cursor-pointer group"
+                        : "cursor-default"
+                    }`}
+                  >
+                    {/* Верхняя секция карточки */}
+                    <div>
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200/80 dark:border-white/[0.06] flex items-center justify-center text-zinc-600 dark:text-zinc-300 shrink-0">
+                            {lecture.source_type === "url" ? (
+                              <Link className="w-3.5 h-3.5 text-blue-500" />
+                            ) : (
+                              <Film className="w-3.5 h-3.5" />
+                            )}
+                          </div>
+
+                          {/* Категория лекции (кнопка смены категории) */}
+                          {lecture.category ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (!currentUser) {
+                                  onOpenAuth("Авторизуйтесь, чтобы менять категории лекций")
+                                  return
+                                }
+                                setLectureToAssignCategory(lecture)
+                              }}
+                              title="Нажмите, чтобы изменить категорию"
+                              className="px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1 border hover:brightness-110 transition-all cursor-pointer"
+                              style={{
+                                backgroundColor: `${getCategoryHex(lecture.category.color)}18`,
+                                color: getCategoryHex(lecture.category.color),
+                                borderColor: `${getCategoryHex(lecture.category.color)}35`,
+                              }}
+                            >
+                              <Tag className="w-2.5 h-2.5" />
+                              <span>{lecture.category.name}</span>
+                              <ChevronDown className="w-2.5 h-2.5 opacity-60 ml-0.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (!currentUser) {
+                                  onOpenAuth("Авторизуйтесь, чтобы указать категорию лекции")
+                                  return
+                                }
+                                setLectureToAssignCategory(lecture)
+                              }}
+                              title="Указать категорию для этой лекции"
+                              className="px-2 py-0.5 rounded-md text-[10px] font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-white bg-zinc-50 dark:bg-white/[0.03] hover:bg-zinc-100 dark:hover:bg-white/[0.08] border border-dashed border-zinc-200 dark:border-white/[0.12] flex items-center gap-1 transition-all cursor-pointer"
+                            >
+                              <Tag className="w-2.5 h-2.5 text-zinc-400" />
+                              <span>+ Категория</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Кнопки действий: Избранное (звезда) и Удаление */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => handleFavoriteClick(e, lecture.id)}
+                            title={isFav ? "Удалить из избранного" : "Добавить в избранное"}
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                              isFav
+                                ? "text-amber-500 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
+                                : "text-zinc-400 dark:text-zinc-500 hover:text-amber-500 hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                            }`}
+                          >
+                            <Star
+                              className={`w-3.5 h-3.5 transition-transform ${
+                                isFav ? "fill-amber-500 dark:fill-amber-400 scale-110" : ""
+                              }`}
+                            />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setLectureToDelete(lecture)
+                            }}
+                            title="Удалить лекцию"
+                            className="w-7 h-7 rounded-lg text-zinc-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex items-center justify-center cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <h3 className="text-base font-semibold text-zinc-900 dark:text-white tracking-tight line-clamp-2 mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-300 transition-colors">
+                        {lecture.title}
+                      </h3>
+
+                      {/* Индикатор прогресса просмотра */}
+                      {hasProgress && (
+                        <div className="mt-2.5 mb-1 space-y-1.5 p-2 rounded-xl bg-blue-500/[0.05] dark:bg-blue-600/[0.08] border border-blue-500/20">
+                          <div className="flex items-center justify-between text-[10px] font-mono">
+                            <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-semibold">
+                              <Play className="w-2.5 h-2.5 fill-current" />
+                              Просмотрено {progressPercent}%
+                            </span>
+                            <span className="text-zinc-500 dark:text-zinc-400 font-medium">
+                              {formatTimecode(progressSec)} / {formatTimecode(lecture.duration)}
+                            </span>
+                          </div>
+                          <div className="h-1 w-full bg-zinc-200/80 dark:bg-white/[0.08] rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all"
+                              style={{ width: `${progressPercent}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Нижняя секция: статус или метрики */}
+                    <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-white/[0.06]">
+                      {isReady ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                            <div className="flex items-center gap-1.5 font-mono">
+                              <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                              <span>{formatTimecode(lecture.duration)}</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-500/20">
+                              <span>Готово к изучению</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-zinc-400" />
+                              {formatDate(lecture.created_at)}
+                            </span>
+                            <span className="flex items-center gap-0.5 text-blue-600 dark:text-blue-400 font-medium group-hover:translate-x-1 transition-transform">
+                              Открыть
+                              <ChevronRight className="w-3 h-3" />
+                            </span>
+                          </div>
+                        </div>
+                      ) : isError ? (
+                        <div className="space-y-2">
+                          <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-300 flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 dark:text-red-400 mt-0.5" />
+                            <div>
+                              <div className="font-medium text-red-700 dark:text-red-300">Ошибка обработки</div>
+                              <div className="text-[11px] text-red-600/80 dark:text-red-400/80 line-clamp-2">
+                                {lecture.error_message || "Не удалось обработать видео."}
+                              </div>
+                            </div>
+                          </div>
+                          {onRetryLecture && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onRetryLecture(lecture.id)
+                              }}
+                              className="w-full py-1.5 px-3 rounded-lg bg-zinc-100 dark:bg-white/[0.06] hover:bg-zinc-200 dark:hover:bg-white/[0.12] border border-zinc-200 dark:border-white/[0.1] text-xs text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-all flex items-center justify-center gap-1.5 font-medium cursor-pointer"
+                            >
+                              <RotateCw className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                              <span>Повторить обработку</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        /* Пошаговый степпер обработки лекции */
+                        <div className="space-y-2.5 py-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1.5">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              {PIPELINE_STEPS[currentStepIdx]?.label || "Обработка..."}
+                            </span>
+                            <span className="text-zinc-400 dark:text-zinc-500 font-mono text-[10px]">
+                              {currentStepIdx + 1}/4
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {PIPELINE_STEPS.map((step, idx) => {
+                              const isCompleted = idx < currentStepIdx
+                              const isCurrent = idx === currentStepIdx
+
+                              return (
+                                <div
+                                  key={step.key}
+                                  className="space-y-1"
+                                  title={step.label}
+                                >
+                                  <div
+                                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                                      isCompleted
+                                        ? "bg-blue-600 dark:bg-blue-500"
+                                        : isCurrent
+                                        ? "bg-blue-400 animate-pulse"
+                                        : "bg-zinc-200 dark:bg-white/[0.08]"
+                                    }`}
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* Окно подтверждения удаления лекции */}
+      <ConfirmModal
+        isOpen={lectureToDelete !== null}
+        title="Удалить лекцию?"
+        itemTitle={lectureToDelete?.title}
+        description="Все связанные материалы, расшифровка речи, семантические таймкоды и конспект будут безвозвратно удалены."
+        confirmText="Удалить"
+        cancelText="Отмена"
+        type="danger"
+        icon="trash"
+        onConfirm={() => {
+          if (lectureToDelete) {
+            onDeleteLecture(lectureToDelete.id)
+            setLectureToDelete(null)
+          }
+        }}
+        onClose={() => setLectureToDelete(null)}
+      />
+
+      {/* Окно подтверждения удаления категории */}
+      <ConfirmModal
+        isOpen={categoryToDelete !== null}
+        title="Удалить категорию?"
+        itemTitle={categoryToDelete?.name}
+        description="Лекции из этой категории сохранятся в общей библиотеке. Будет удалена только сама категория."
+        confirmText="Удалить"
+        cancelText="Отмена"
+        type="danger"
+        icon="trash"
+        onConfirm={() => {
+          if (categoryToDelete) {
+            onDeleteCategory(categoryToDelete.id)
+            setCategoryToDelete(null)
+          }
+        }}
+        onClose={() => setCategoryToDelete(null)}
+      />
+
+      {/* Окно назначения / смены категории для лекции */}
+      <AssignCategoryModal
+        isOpen={lectureToAssignCategory !== null}
+        lecture={lectureToAssignCategory}
+        categories={categories}
+        onAssignCategory={onAssignCategory}
+        onCreateCategory={onCreateCategory}
+        onClose={() => setLectureToAssignCategory(null)}
+      />
+    </div>
+  )
+}
