@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react"
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { flushSync } from "react-dom"
 import { AnimatePresence } from "framer-motion"
 import { Sparkles } from "lucide-react"
 import { Navbar } from "./components/Navbar"
@@ -37,8 +38,88 @@ export const App: React.FC = () => {
     localStorage.setItem("cyberbreak_theme", theme)
   }, [theme])
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+  const isTransitioningRef = useRef(false)
+
+  // Переключение темы:
+  // - с тёмной на светлую: круг РАСШИРЯЕТСЯ из кнопки
+  // - со светлой на тёмную: круг УМЕНЬШАЕТСЯ обратно в кнопку
+  const toggleTheme = (e?: React.MouseEvent) => {
+    // 1. Вычисляем точный геометрический центр кнопки
+    let x: number
+    let y: number
+
+    const buttonEl = (e?.currentTarget || document.querySelector("[data-theme-toggle]")) as HTMLElement | null
+    if (buttonEl && typeof buttonEl.getBoundingClientRect === "function") {
+      const rect = buttonEl.getBoundingClientRect()
+      x = Math.round(rect.left + rect.width / 2)
+      y = Math.round(rect.top + rect.height / 2)
+    } else if (e?.clientX && e?.clientY) {
+      x = Math.round(e.clientX)
+      y = Math.round(e.clientY)
+    } else {
+      x = Math.round(window.innerWidth / 2)
+      y = Math.round(window.innerHeight / 2)
+    }
+
+    // 2. Радиус охвата (до самого дальнего угла экрана с запасом)
+    const endRadius = Math.ceil(
+      Math.hypot(
+        Math.max(x, window.innerWidth - x),
+        Math.max(y, window.innerHeight - y)
+      ) * 1.15
+    )
+
+    const root = document.documentElement
+    root.style.setProperty("--theme-wave-x", `${x}px`)
+    root.style.setProperty("--theme-wave-y", `${y}px`)
+    root.style.setProperty("--theme-wave-r", `${endRadius}px`)
+
+    // Тёмная -> Светлая: expand (круг растёт из кнопки)
+    // Светлая -> Тёмная: shrink (круг сжимается обратно в кнопку)
+    const isDark = theme === "dark"
+    const direction = isDark ? "expand" : "shrink"
+    root.dataset.themeTransition = direction
+
+    const doc = document as any
+
+    // Если поддерживается View Transitions API:
+    if (typeof doc.startViewTransition === "function") {
+      if (isTransitioningRef.current) return
+      isTransitioningRef.current = true
+
+      try {
+        const transition = doc.startViewTransition(() => {
+          flushSync(() => {
+            setTheme((prev) => {
+              const next = prev === "dark" ? "light" : "dark"
+              if (next === "dark") {
+                root.classList.add("dark")
+                root.classList.remove("light")
+              } else {
+                root.classList.remove("dark")
+                root.classList.add("light")
+              }
+              localStorage.setItem("cyberbreak_theme", next)
+              return next
+            })
+          })
+        })
+
+        transition.finished.finally(() => {
+          delete root.dataset.themeTransition
+          isTransitioningRef.current = false
+        })
+      } catch (err) {
+        console.warn("View transition error:", err)
+        delete root.dataset.themeTransition
+        setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+        isTransitioningRef.current = false
+      }
+    } else {
+      // Браузеры без View Transitions API
+      delete root.dataset.themeTransition
+      setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+    }
   }
 
   // Фильтры и навигация
@@ -303,22 +384,34 @@ export const App: React.FC = () => {
   )
 
   return (
-    <div className="min-h-screen bg-[#F4F4F7] dark:bg-[#09090B] text-zinc-900 dark:text-zinc-100 flex flex-col font-sans transition-colors duration-300 selection:bg-blue-600/30 selection:text-blue-500 relative">
+    <div className="min-h-screen bg-[#EEF2F9] dark:bg-[#070814] text-slate-900 dark:text-zinc-100 flex flex-col font-sans transition-colors duration-400 selection:bg-cyan-500/30 selection:text-cyan-400 relative overflow-x-hidden">
+      {/* Жидкий световой фон (Liquid Ambient Glow Mesh) */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none">
+        {/* Жидкая лазурная сфера */}
+        <div className="absolute -top-[12%] -left-[8%] w-[680px] h-[680px] rounded-full bg-gradient-to-br from-cyan-400/25 via-blue-600/20 to-transparent blur-[120px] dark:from-cyan-400/16 dark:via-blue-600/12 animate-liquid-float-1" />
+        {/* Жидкая индиго-фиолетовая сфера */}
+        <div className="absolute top-[22%] -right-[10%] w-[640px] h-[640px] rounded-full bg-gradient-to-bl from-purple-500/20 via-indigo-600/18 to-transparent blur-[130px] dark:from-purple-500/14 dark:via-indigo-600/12 animate-liquid-float-2" />
+        {/* Жидкая изумрудно-бирюзовая сфера */}
+        <div className="absolute -bottom-[15%] left-[22%] w-[780px] h-[560px] rounded-full bg-gradient-to-t from-teal-400/20 via-sky-500/16 to-transparent blur-[140px] dark:from-teal-400/10 dark:via-sky-500/10 animate-liquid-float-3" />
+        {/* Центральный мягкий пульсирующий блик */}
+        <div className="absolute top-[45%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] rounded-full bg-blue-500/10 blur-[150px] dark:bg-cyan-400/08 animate-liquid-pulse" />
+      </div>
+
       {/* Экран первичной проверки авторизации */}
       {authLoading ? (
-        <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[#F4F4F7] dark:bg-[#09090B]">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-glow animate-pulse">
+        <div className="min-h-screen flex flex-col items-center justify-center gap-3 relative z-10">
+          <div className="w-11 h-11 rounded-2xl liquid-btn-primary flex items-center justify-center shadow-glow animate-pulse">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
-          <span className="text-xs text-zinc-400 font-mono">Загрузка платформы...</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">Загрузка платформы...</span>
         </div>
       ) : (
         <>
           {/* Основной интерфейс платформы (размыт и заблокирован, пока пользователь не авторизован) */}
           <div
-            className={`flex-1 flex flex-col transition-all duration-500 ${
+            className={`flex-1 flex flex-col relative z-10 transition-all duration-500 ${
               !currentUser
-                ? "filter blur-[5px] opacity-85 pointer-events-none select-none"
+                ? "filter blur-[6px] opacity-80 pointer-events-none select-none"
                 : "filter-none opacity-100 pointer-events-auto"
             }`}
           >

@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { api } from "../api/client"
 import { CATEGORY_COLOR_PRESETS } from "../utils/colors"
+import Tooltip from "./Tooltip"
 import type { Category, Lecture } from "../types"
 
 interface UploadModalProps {
@@ -171,7 +172,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleClose}
-            className="fixed inset-0 bg-black/75 backdrop-blur-md"
+            className="fixed inset-0 bg-black/60 backdrop-blur-md"
           />
 
           <motion.div
@@ -179,10 +180,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-[#121215] border border-zinc-200/90 dark:border-white/[0.1] shadow-2xl overflow-hidden z-10"
+            className="relative w-full max-w-lg rounded-3xl liquid-glass-modal overflow-hidden z-10"
           >
             {/* Заголовок */}
-            <div className="p-6 border-b border-zinc-200/80 dark:border-white/[0.06] flex items-center justify-between">
+            <div className="p-6 border-b border-black/[0.06] dark:border-white/[0.08] flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-zinc-900 dark:text-white tracking-tight">
                   Добавление видеолекции
@@ -193,7 +194,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               </div>
               <button
                 onClick={handleClose}
-                className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-white/[0.04] hover:bg-zinc-200 dark:hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-700 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full liquid-glass-subtle hover:bg-black/10 dark:hover:bg-white/10 text-zinc-400 hover:text-zinc-700 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -201,43 +202,38 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
             {/* Переключатель вкладок */}
             <div className="px-6 pt-5">
-              <div className="flex p-1 bg-zinc-100 dark:bg-black/40 rounded-xl border border-zinc-200/80 dark:border-white/[0.06]">
+              <div className="relative flex p-1 liquid-glass-subtle rounded-2xl">
+                {/* Скользящий стеклянный индикатор активной вкладки */}
+                <div
+                  className="absolute top-1 bottom-1 left-1 rounded-xl liquid-tab-indicator pointer-events-none"
+                  style={{
+                    width: "calc(50% - 4px)",
+                    transform: activeTab === "file" ? "translateX(0%)" : "translateX(100%)",
+                  }}
+                />
+
                 <button
                   type="button"
                   onClick={() => setActiveTab("file")}
-                  className={`relative flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+                  className={`relative z-10 flex-1 py-1.5 text-xs font-medium rounded-xl transition-colors cursor-pointer text-center ${
                     activeTab === "file"
-                      ? "text-zinc-900 dark:text-white"
+                      ? "text-zinc-900 dark:text-white font-semibold"
                       : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
                   }`}
                 >
-                  {activeTab === "file" && (
-                    <motion.div
-                      layoutId="upload-tab"
-                      className="absolute inset-0 bg-white dark:bg-white/[0.1] rounded-lg shadow-sm border border-zinc-200/80 dark:border-white/[0.08]"
-                      transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                    />
-                  )}
-                  <span className="relative z-10">Видеофайл (MP4, WebM)</span>
+                  Видеофайл (MP4, WebM)
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setActiveTab("url")}
-                  className={`relative flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+                  className={`relative z-10 flex-1 py-1.5 text-xs font-medium rounded-xl transition-colors cursor-pointer text-center ${
                     activeTab === "url"
-                      ? "text-zinc-900 dark:text-white"
+                      ? "text-zinc-900 dark:text-white font-semibold"
                       : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
                   }`}
                 >
-                  {activeTab === "url" && (
-                    <motion.div
-                      layoutId="upload-tab"
-                      className="absolute inset-0 bg-white dark:bg-white/[0.1] rounded-lg shadow-sm border border-zinc-200/80 dark:border-white/[0.08]"
-                      transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                    />
-                  )}
-                  <span className="relative z-10">По ссылке (YouTube, Vimeo)</span>
+                  По ссылке (YouTube, Vimeo)
                 </button>
               </div>
             </div>
@@ -261,13 +257,13 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                     onClick={() => fileInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer ${
                       dragActive
-                        ? "border-blue-500 bg-blue-500/10"
-                        : "border-zinc-300 dark:border-white/[0.1] bg-zinc-50 dark:bg-white/[0.02] hover:border-zinc-400 dark:hover:border-white/[0.2] hover:bg-zinc-100 dark:hover:bg-white/[0.04]"
+                        ? "border-cyan-400 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.25)]"
+                        : "liquid-glass-subtle border-cyan-500/20 dark:border-white/15 hover:border-cyan-400/50 hover:bg-cyan-500/5"
                     }`}
                   >
                     {selectedFile ? (
                       <div className="flex flex-col items-center gap-2">
-                        <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 dark:text-emerald-400 flex items-center justify-center">
                           <CheckCircle2 className="w-5 h-5" />
                         </div>
                         <div className="text-xs font-medium text-zinc-900 dark:text-white max-w-xs truncate">
@@ -279,12 +275,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-2">
-                        <div className="w-10 h-10 rounded-full bg-zinc-200/70 dark:bg-white/[0.05] text-zinc-600 dark:text-zinc-300 flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-full liquid-glass-subtle text-cyan-500 dark:text-cyan-400 flex items-center justify-center">
                           <UploadCloud className="w-5 h-5" />
                         </div>
                         <div className="text-xs font-medium text-zinc-700 dark:text-zinc-200">
                           Перетащите видео сюда или{" "}
-                          <span className="text-blue-500 underline underline-offset-2">
+                          <span className="text-cyan-500 dark:text-cyan-400 underline underline-offset-2">
                             выберите файл
                           </span>
                         </div>
@@ -305,7 +301,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="https://www.youtube.com/watch?v=..."
-                    className="w-full bg-zinc-50 dark:bg-white/[0.03] border border-zinc-200 dark:border-white/[0.08] focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none transition-all"
+                    className="w-full liquid-glass-input rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none transition-all"
                   />
                 </div>
               )}
@@ -320,7 +316,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Автоматически из файла или видеосервиса"
-                  className="w-full bg-zinc-50 dark:bg-white/[0.03] border border-zinc-200 dark:border-white/[0.08] focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none transition-all"
+                  className="w-full liquid-glass-input rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none transition-all"
                 />
               </div>
 
@@ -328,13 +324,13 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-blue-500" />
+                    <Tag className="w-3.5 h-3.5 text-cyan-500 dark:text-cyan-400" />
                     <span>Категория лекции</span>
                   </label>
                   <button
                     type="button"
                     onClick={() => setIsCreatingCategory(!isCreatingCategory)}
-                    className="text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 font-medium transition-colors cursor-pointer"
+                    className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300 font-medium transition-colors cursor-pointer"
                   >
                     {isCreatingCategory ? "Отмена" : "+ Создать новую"}
                   </button>
@@ -347,30 +343,30 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                       const val = e.target.value
                       setSelectedCategoryId(val ? Number(val) : undefined)
                     }}
-                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-white/[0.08] focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white outline-none cursor-pointer"
+                    className="w-full liquid-glass-input rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white outline-none cursor-pointer"
                   >
-                    <option value="">Без категории</option>
+                    <option value="" className="bg-white dark:bg-[#12121e]">Без категории</option>
                     {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
+                      <option key={c.id} value={c.id} className="bg-white dark:bg-[#12121e]">
                         {c.name}
                       </option>
                     ))}
                   </select>
                 ) : (
-                  <div className="space-y-2.5 p-3 rounded-2xl bg-zinc-50 dark:bg-white/[0.03] border border-zinc-200 dark:border-white/[0.08]">
+                  <div className="space-y-2.5 p-3 rounded-2xl liquid-glass-subtle">
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
                         value={newCategoryName}
                         onChange={(e) => setNewCategoryName(e.target.value)}
                         placeholder="Название (например: Математика)"
-                        className="flex-1 bg-white dark:bg-white/[0.05] border border-zinc-200 dark:border-white/[0.1] rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none focus:border-blue-500"
+                        className="flex-1 liquid-glass-input rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none"
                       />
                       <button
                         type="button"
                         onClick={handleCreateNewCategory}
                         disabled={!newCategoryName.trim()}
-                        className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                        className="px-3 py-2 rounded-xl liquid-btn-primary disabled:opacity-40 text-white text-xs font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0"
                       >
                         <FolderPlus className="w-3.5 h-3.5" />
                         <span>Сохранить</span>
@@ -378,24 +374,24 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                     </div>
 
                     {/* Выбор цвета категории */}
-                    <div className="flex items-center justify-between pt-1 border-t border-zinc-200/60 dark:border-white/[0.06]">
+                    <div className="flex items-center justify-between pt-1 border-t border-black/[0.06] dark:border-white/[0.06]">
                       <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">Цвет метки:</span>
                       <div className="flex items-center gap-2">
                         {CATEGORY_COLOR_PRESETS.map((preset) => {
                           const isSelected = newCategoryColor === preset.hex
                           return (
-                            <button
-                              key={preset.id}
-                              type="button"
-                              onClick={() => setNewCategoryColor(preset.hex)}
-                              title={preset.label}
-                              className={`w-4 h-4 rounded-full transition-transform cursor-pointer relative ${
-                                isSelected
-                                  ? "scale-125 ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#121215] ring-blue-500"
-                                  : "hover:scale-110 opacity-70 hover:opacity-100"
-                              }`}
-                              style={{ backgroundColor: preset.hex }}
-                            />
+                            <Tooltip key={preset.id} content={preset.label} position="top">
+                              <button
+                                type="button"
+                                onClick={() => setNewCategoryColor(preset.hex)}
+                                className={`w-4 h-4 rounded-full transition-transform cursor-pointer relative ${
+                                  isSelected
+                                    ? "scale-125 ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#121215] ring-cyan-400"
+                                    : "hover:scale-110 opacity-70 hover:opacity-100"
+                                }`}
+                                style={{ backgroundColor: preset.hex }}
+                              />
+                            </Tooltip>
                           )
                         })}
                       </div>
@@ -406,7 +402,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
               {/* Сообщение об ошибке */}
               {errorMessage && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-300 flex items-center gap-2">
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 backdrop-blur-sm text-xs text-red-600 dark:text-red-300 flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
                   <span>{errorMessage}</span>
                 </div>
@@ -419,9 +415,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                     <span>Загрузка файла на сервер...</span>
                     <span>{uploadPercent}%</span>
                   </div>
-                  <div className="w-full h-1.5 bg-zinc-200 dark:bg-white/[0.06] rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 liquid-glass-subtle rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-blue-500 rounded-full transition-all duration-200"
+                      className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full shadow-[0_0_8px_rgba(6,182,212,0.5)] transition-all duration-200"
                       style={{ width: `${uploadPercent}%` }}
                     />
                   </div>
@@ -434,14 +430,14 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                   type="button"
                   onClick={handleClose}
                   disabled={loading}
-                  className="px-4 py-2 rounded-xl text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/[0.04] transition-all cursor-pointer disabled:opacity-50"
+                  className="px-4 py-2 rounded-xl text-xs font-medium liquid-btn-glass transition-all cursor-pointer disabled:opacity-50"
                 >
                   Отмена
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-5 py-2 rounded-xl text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-glow flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl text-xs font-medium liquid-btn-primary transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>{loading ? "Обработка..." : "Добавить лекцию"}</span>

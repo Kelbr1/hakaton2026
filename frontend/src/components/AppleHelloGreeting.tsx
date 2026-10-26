@@ -78,17 +78,17 @@ export const AppleHelloGreeting: React.FC<AppleHelloGreetingProps> = ({
               className="space-y-6 flex flex-col items-center"
             >
               {/* Иконка успеха со свечением */}
-              <div className="w-18 h-18 rounded-3xl bg-gradient-to-tr from-blue-500 via-indigo-500 to-cyan-400 p-[1.5px] shadow-glow">
-                <div className="w-full h-full bg-[#0a0a0d] rounded-[22px] flex items-center justify-center p-3">
-                  <Sparkles className="w-8 h-8 text-cyan-300" />
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-cyan-400 via-blue-500 to-indigo-500 p-[1.5px] shadow-[0_0_35px_rgba(6,182,212,0.35)]">
+                <div className="w-full h-full liquid-glass rounded-[22px] flex items-center justify-center p-3 backdrop-blur-2xl">
+                  <Sparkles className="w-8 h-8 text-cyan-300 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
                 </div>
               </div>
 
               <div className="space-y-3">
-                <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+                <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white drop-shadow-md">
                   Добро пожаловать, {userName}!
                 </h2>
-                <p className="text-sm text-zinc-400 font-normal leading-relaxed max-w-md">
+                <p className="text-sm text-zinc-300/80 font-normal leading-relaxed max-w-md">
                   Ваш профиль активирован. Теперь вам доступны персональные категории, избранные лекции и автономный семантический ИИ-анализ.
                 </p>
               </div>
@@ -98,7 +98,7 @@ export const AppleHelloGreeting: React.FC<AppleHelloGreetingProps> = ({
                   e.stopPropagation()
                   onComplete()
                 }}
-                className="mt-2 group flex items-center gap-2.5 px-7 py-3 rounded-full bg-white text-black font-semibold text-sm hover:bg-zinc-200 active:scale-95 transition-all shadow-xl cursor-pointer"
+                className="mt-2 group flex items-center gap-2.5 px-8 py-3.5 rounded-full liquid-btn-primary text-white font-semibold text-sm active:scale-95 transition-all shadow-glow cursor-pointer"
               >
                 <span>Начать работу</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

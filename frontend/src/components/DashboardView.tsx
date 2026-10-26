@@ -27,6 +27,7 @@ import { formatTimecode, formatDate } from "../utils/format"
 import { CATEGORY_COLOR_PRESETS, getCategoryHex } from "../utils/colors"
 import { ConfirmModal } from "./ConfirmModal"
 import { AssignCategoryModal } from "./AssignCategoryModal"
+import Tooltip from "./Tooltip"
 import type { Lecture, SearchResultItem, Category, User } from "../types"
 
 export type SortOption =
@@ -113,6 +114,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Сортировка лекций
   const [sortBy, setSortBy] = useState<SortOption>("date_desc")
   const [isSortOpen, setIsSortOpen] = useState<boolean>(false)
+
+  // Интерактивный стеклянный блик за курсором (Liquid Glass Spotlight)
+  const handleSpotlightMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    e.currentTarget.style.setProperty("--mouse-x", `${e.clientX - rect.left}px`)
+    e.currentTarget.style.setProperty("--mouse-y", `${e.clientY - rect.top}px`)
+  }
 
   // Горячая клавиша Cmd/Ctrl+K или / для быстрого фокуса на поиске Spotlight
   useEffect(() => {
@@ -301,24 +309,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Инпут поиска в стиле Spotlight */}
         <div className="relative group">
-          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-blue-600/20 via-indigo-500/15 to-cyan-500/20 dark:from-blue-600/30 dark:via-indigo-500/20 dark:to-cyan-500/30 opacity-70 blur-xl group-hover:opacity-100 transition duration-500" />
-          <div className="relative flex items-center bg-white/95 dark:bg-[#121215]/90 backdrop-blur-2xl border border-zinc-200/90 dark:border-white/[0.12] rounded-2xl shadow-xl dark:shadow-2xl px-4 py-3.5 focus-within:border-blue-500/80 transition-all">
-            <Search className="w-5 h-5 text-zinc-400 dark:text-zinc-500 mr-3 shrink-0" />
+          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-cyan-500/25 via-blue-600/20 to-indigo-500/25 opacity-70 blur-xl group-hover:opacity-100 transition duration-500" />
+          <div className="relative flex items-center liquid-glass-input rounded-2xl px-4 py-3.5 focus-within:border-cyan-400/80 transition-all">
+            <Search className="w-5 h-5 text-slate-400 dark:text-zinc-500 mr-3 shrink-0" />
             <input
               ref={spotlightInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Например: как устроен механизм внимания в трансформерах..."
-              className="w-full bg-transparent text-sm sm:text-base text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none"
+              className="w-full bg-transparent text-sm sm:text-base text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 outline-none"
             />
             {isSearching ? (
-              <Loader2 className="w-5 h-5 text-blue-500 dark:text-blue-400 animate-spin shrink-0 ml-2" />
+              <Loader2 className="w-5 h-5 text-cyan-500 dark:text-cyan-400 animate-spin shrink-0 ml-2" />
             ) : searchQuery ? (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="w-5 h-5 text-zinc-400 hover:text-zinc-700 dark:hover:text-white shrink-0 ml-2 cursor-pointer"
+                className="w-5 h-5 text-slate-400 hover:text-slate-700 dark:hover:text-white shrink-0 ml-2 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -336,7 +344,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               transition={{ duration: 0.2 }}
               className="mt-4 space-y-2.5"
             >
-              <div className="flex items-center justify-between px-1 text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+              <div className="flex items-center justify-between px-1 text-xs text-slate-500 dark:text-zinc-400 font-medium">
                 <span>
                   {searchResults.length > 0
                     ? `Найдено смысловых фрагментов: ${searchResults.length}`
@@ -344,7 +352,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     ? "Идет семантический поиск по векторной базе..."
                     : "Совпадений не обнаружено"}
                 </span>
-                <span className="text-[11px] font-mono text-blue-600 dark:text-blue-400">
+                <span className="text-[11px] font-mono text-cyan-600 dark:text-cyan-400">
                   Sentence-Transformers 384D
                 </span>
               </div>
@@ -356,31 +364,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   animate={{ opacity: 1, scale: 1 }}
                   whileHover={{ scale: 1.005 }}
                   onClick={() => onSelectLecture(hit.lecture_id, hit.start_time)}
-                  className="p-4 rounded-2xl bg-white dark:bg-[#121215]/80 hover:bg-zinc-50 dark:hover:bg-[#18181C] border border-zinc-200/90 dark:border-white/[0.08] hover:border-zinc-300 dark:hover:border-white/[0.18] transition-all cursor-pointer shadow-md dark:shadow-lg group"
+                  onMouseEnter={handleSpotlightMouseMove}
+                  onMouseMove={handleSpotlightMouseMove}
+                  className="p-4 rounded-2xl liquid-glass-card transition-all cursor-pointer shadow-lg group relative"
                 >
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-2 truncate">
-                      <Film className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 shrink-0" />
-                      <span className="text-xs font-semibold text-zinc-900 dark:text-white truncate">
-                        {hit.lecture_title}
-                      </span>
+                  {/* Интерактивный стеклянный блик за курсором */}
+                  <div className="liquid-card-spotlight pointer-events-none" aria-hidden="true" />
+
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 truncate">
+                        <Film className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 shrink-0" />
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                          {hit.lecture_title}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/20">
+                          {hit.score}% по смыслу
+                        </span>
+
+                        <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold liquid-glass-subtle text-slate-800 dark:text-white flex items-center gap-1 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                          <Play className="w-2.5 h-2.5 fill-current" />
+                          [{formatTimecode(hit.start_time)}]
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                        {hit.score}% по смыслу
-                      </span>
-
-                      <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-zinc-100 dark:bg-white/[0.08] text-zinc-800 dark:text-white border border-zinc-200 dark:border-white/[0.1] flex items-center gap-1 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                        <Play className="w-2.5 h-2.5 fill-current" />
-                        [{formatTimecode(hit.start_time)}]
-                      </span>
-                    </div>
+                    <p className="text-xs text-slate-600 dark:text-zinc-300 line-clamp-2 leading-relaxed">
+                      «{hit.text}»
+                    </p>
                   </div>
-
-                  <p className="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-relaxed">
-                    «{hit.text}»
-                  </p>
                 </motion.div>
               ))}
             </motion.div>
@@ -392,10 +407,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* ================= ЛЕВАЯ КОЛОНКА / САЙДБАР (3 колонки) ================= */}
         <aside className="lg:col-span-3 space-y-4 lg:sticky lg:top-24">
-          <div className="bg-white/90 dark:bg-[#121215]/90 backdrop-blur-2xl border border-zinc-200/80 dark:border-white/[0.08] rounded-3xl p-3.5 shadow-lg dark:shadow-xl space-y-5 transition-colors">
+          <div className="liquid-glass rounded-3xl p-4 shadow-xl space-y-5 transition-colors">
             {/* Группа: Библиотека */}
             <div className="space-y-1">
-              <div className="px-3 pb-1 text-[11px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider font-semibold">
+              <div className="px-3 pb-1 text-[11px] font-mono uppercase text-slate-400 dark:text-zinc-500 tracking-wider font-semibold">
                 Библиотека
               </div>
 
@@ -408,8 +423,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition-all cursor-pointer ${
                   !onlyFavorites && selectedCategoryId === null
-                    ? "bg-zinc-900 text-white dark:bg-white dark:text-black font-semibold shadow-md"
-                    : "text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                    ? "liquid-btn-primary text-white font-semibold shadow-liquid-btn"
+                    : "liquid-btn-glass text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
@@ -419,8 +434,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
                     !onlyFavorites && selectedCategoryId === null
-                      ? "bg-white/20 text-white dark:bg-black/10 dark:text-black font-semibold"
-                      : "bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-400"
+                      ? "bg-white/25 text-white font-semibold"
+                      : "liquid-glass-subtle text-slate-600 dark:text-zinc-400"
                   }`}
                 >
                   {lectures.length}
@@ -440,8 +455,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition-all cursor-pointer ${
                   onlyFavorites
-                    ? "bg-amber-400 text-black font-semibold shadow-md shadow-amber-400/20"
-                    : "text-zinc-700 dark:text-zinc-300 hover:text-amber-500 dark:hover:text-amber-300 hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                    ? "bg-gradient-to-r from-amber-400 to-amber-500 text-black font-semibold shadow-md shadow-amber-400/20 border border-white/40"
+                    : "liquid-btn-glass text-slate-700 dark:text-zinc-300 hover:text-amber-500 dark:hover:text-amber-300"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
@@ -456,7 +471,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
                     onlyFavorites
                       ? "bg-black/15 text-black font-semibold"
-                      : "bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-400"
+                      : "liquid-glass-subtle text-slate-600 dark:text-zinc-400"
                   }`}
                 >
                   {favoritesCount}
@@ -465,35 +480,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             {/* Разделитель */}
-            <div className="h-[1px] bg-zinc-200/70 dark:bg-white/[0.06] mx-1" />
+            <div className="h-[1px] bg-slate-200/70 dark:bg-white/[0.08] mx-1" />
 
             {/* Группа: Категории */}
             <div className="space-y-2">
               <div className="flex items-center justify-between px-3 pb-1">
-                <span className="text-[11px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider font-semibold">
+                <span className="text-[11px] font-mono uppercase text-slate-400 dark:text-zinc-500 tracking-wider font-semibold">
                   Категории
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!currentUser) {
-                      onOpenAuth("Авторизуйтесь, чтобы создавать категории")
-                      return
-                    }
-                    setIsCreatingCategory(true)
-                  }}
-                  title="Добавить категорию"
-                  className="w-5 h-5 rounded-md hover:bg-zinc-100 dark:hover:bg-white/[0.08] text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
+                <Tooltip content="Добавить категорию" position="top">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!currentUser) {
+                        onOpenAuth("Авторизуйтесь, чтобы создавать категории")
+                        return
+                      }
+                      setIsCreatingCategory(true)
+                    }}
+                    className="w-5 h-5 rounded-md hover:bg-white/60 dark:hover:bg-white/[0.08] text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
               </div>
 
               {/* Форма создания новой категории */}
               {isCreatingCategory && (
                 <form
                   onSubmit={handleCreateCategorySubmit}
-                  className="p-2.5 bg-zinc-50 dark:bg-black/50 border border-blue-500/40 rounded-2xl shadow-inner mb-2 space-y-2"
+                  className="p-2.5 liquid-glass-subtle border border-cyan-500/40 rounded-2xl shadow-inner mb-2 space-y-2"
                 >
                   <div className="flex items-center gap-1.5">
                     <input
@@ -503,49 +519,51 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       onChange={(e) => setNewCatName(e.target.value)}
                       placeholder="Название категории..."
                       disabled={isSubmittingCat}
-                      className="flex-1 bg-transparent text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none px-1"
+                      className="flex-1 bg-transparent text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 outline-none px-1"
                     />
-                    <button
-                      type="submit"
-                      disabled={isSubmittingCat || !newCatName.trim()}
-                      className="w-6 h-6 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                      title="Сохранить"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCreatingCategory(false)
-                        setNewCatName("")
-                        setNewCatColor("#3b82f6")
-                      }}
-                      className="w-6 h-6 rounded-lg bg-zinc-200 dark:bg-white/[0.08] hover:bg-zinc-300 dark:hover:bg-white/[0.15] text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                      title="Отмена"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <Tooltip content="Сохранить" position="top">
+                      <button
+                        type="submit"
+                        disabled={isSubmittingCat || !newCatName.trim()}
+                        className="w-6 h-6 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-sm"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Отмена" position="top">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingCategory(false)
+                          setNewCatName("")
+                          setNewCatColor("#3b82f6")
+                        }}
+                        className="w-6 h-6 rounded-lg bg-slate-200/80 dark:bg-white/[0.08] hover:bg-slate-300 dark:hover:bg-white/[0.15] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
                   </div>
 
                   {/* Выбор цвета новой категории */}
-                  <div className="flex items-center justify-between pt-1.5 border-t border-zinc-200/60 dark:border-white/[0.06]">
-                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">Цвет метки:</span>
+                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-white/[0.06]">
+                    <span className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Цвет метки:</span>
                     <div className="flex items-center gap-1.5">
                       {CATEGORY_COLOR_PRESETS.map((preset) => {
                         const isSelected = newCatColor === preset.hex
                         return (
-                          <button
-                            key={preset.id}
-                            type="button"
-                            onClick={() => setNewCatColor(preset.hex)}
-                            title={preset.label}
-                            className={`w-3.5 h-3.5 rounded-full transition-transform cursor-pointer relative ${
-                              isSelected
-                                ? "scale-125 ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#121215] ring-blue-500"
-                                : "hover:scale-110 opacity-70 hover:opacity-100"
-                            }`}
-                            style={{ backgroundColor: preset.hex }}
-                          />
+                          <Tooltip key={preset.id} content={preset.label} position="top">
+                            <button
+                              type="button"
+                              onClick={() => setNewCatColor(preset.hex)}
+                              className={`w-3.5 h-3.5 rounded-full transition-transform cursor-pointer relative ${
+                                isSelected
+                                  ? "scale-125 ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#121526] ring-blue-500"
+                                  : "hover:scale-110 opacity-70 hover:opacity-100"
+                              }`}
+                              style={{ backgroundColor: preset.hex }}
+                            />
+                          </Tooltip>
                         )
                       })}
                     </div>
@@ -568,7 +586,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <form
                         key={cat.id}
                         onSubmit={handleUpdateCategorySubmit}
-                        className="p-2.5 bg-zinc-50 dark:bg-black/60 border border-amber-500/50 rounded-2xl shadow-inner space-y-2 mb-1"
+                        className="p-2.5 liquid-glass-subtle border border-amber-500/50 rounded-2xl shadow-inner space-y-2 mb-1"
                       >
                         <div className="flex items-center gap-1.5">
                           <input
@@ -577,49 +595,52 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             value={editingCatName}
                             onChange={(e) => setEditingCatName(e.target.value)}
                             disabled={isSubmittingCat}
-                            className="flex-1 bg-transparent text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 outline-none px-1"
+                            className="flex-1 bg-transparent text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 outline-none px-1"
                           />
-                          <button
-                            type="submit"
-                            disabled={isSubmittingCat || !editingCatName.trim()}
-                            className="w-6 h-6 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                            title="Сохранить"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingCategoryId(null)
-                              setEditingCatName("")
-                              setEditingCatColor("#3b82f6")
-                            }}
-                            className="w-6 h-6 rounded-lg bg-zinc-200 dark:bg-white/[0.08] hover:bg-zinc-300 dark:hover:bg-white/[0.15] text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                            title="Отмена"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+                          <Tooltip content="Сохранить" position="top">
+                            <button
+                              type="submit"
+                              disabled={isSubmittingCat || !editingCatName.trim()}
+                              className="w-6 h-6 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-sm"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                          </Tooltip>
+                          <Tooltip content="Отмена" position="top">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCategoryId(null)
+                                setEditingCatName("")
+                                setEditingCatColor("#3b82f6")
+                              }}
+                              className="w-6 h-6 rounded-lg bg-slate-200/80 dark:bg-white/[0.08] hover:bg-slate-300 dark:hover:bg-white/[0.15] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </Tooltip>
                         </div>
 
                         {/* Выбор цвета при редактировании категории */}
-                        <div className="flex items-center justify-between pt-1.5 border-t border-zinc-200/60 dark:border-white/[0.06]">
-                          <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">Цвет:</span>
+                        <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-white/[0.06]">
+                          <span className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Цвет:</span>
                           <div className="flex items-center gap-1.5">
                             {CATEGORY_COLOR_PRESETS.map((preset) => {
                               const isSelected = editingCatColor === preset.hex
                               return (
-                                <button
-                                  key={preset.id}
-                                  type="button"
-                                  onClick={() => setEditingCatColor(preset.hex)}
-                                  title={preset.label}
-                                  className={`w-3.5 h-3.5 rounded-full transition-transform cursor-pointer relative ${
-                                    isSelected
-                                      ? "scale-125 ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#121215] ring-amber-500"
-                                      : "hover:scale-110 opacity-70 hover:opacity-100"
-                                  }`}
-                                  style={{ backgroundColor: preset.hex }}
-                                />
+                                <Tooltip key={preset.id} content={preset.label} position="top">
+                                  <button
+                                    key={preset.id}
+                                    type="button"
+                                    onClick={() => setEditingCatColor(preset.hex)}
+                                    className={`w-3.5 h-3.5 rounded-full transition-transform cursor-pointer relative ${
+                                      isSelected
+                                        ? "scale-125 ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#121526] ring-amber-500"
+                                        : "hover:scale-110 opacity-70 hover:opacity-100"
+                                    }`}
+                                    style={{ backgroundColor: preset.hex }}
+                                  />
+                                </Tooltip>
                               )
                             })}
                           </div>
@@ -637,13 +658,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       }}
                       className={`group w-full flex items-center justify-between px-3.5 py-2 rounded-2xl text-xs font-medium transition-all cursor-pointer ${
                         isSelected
-                          ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
-                          : "text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                          ? "liquid-btn-primary text-white font-semibold shadow-liquid-btn"
+                          : "liquid-glass-subtle text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/70 dark:hover:bg-white/[0.08]"
                       }`}
                     >
                       <div className="flex items-center gap-2.5 truncate mr-2">
                         <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
                           style={{ backgroundColor: getCategoryHex(cat.color) }}
                         />
                         <span className="truncate">{cat.name}</span>
@@ -654,8 +675,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <span
                           className={`text-[10px] px-2 py-0.5 rounded-full font-mono transition-opacity ${
                             isSelected
-                              ? "bg-white/20 text-white"
-                              : "bg-zinc-100 dark:bg-white/[0.06] text-zinc-600 dark:text-zinc-400 group-hover:opacity-40"
+                              ? "bg-white/25 text-white"
+                              : "liquid-glass-subtle text-slate-600 dark:text-zinc-400 group-hover:opacity-40"
                           }`}
                         >
                           {count}
@@ -666,45 +687,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!currentUser) {
-                                onOpenAuth("Авторизуйтесь, чтобы переименовывать категории")
-                                return
-                              }
-                              setEditingCategoryId(cat.id)
-                              setEditingCatName(cat.name)
-                              setEditingCatColor(getCategoryHex(cat.color))
-                            }}
-                            title="Переименовать категорию"
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
-                              isSelected
-                                ? "text-white/80 hover:text-white hover:bg-white/20"
-                                : "text-zinc-400 hover:text-amber-500 hover:bg-zinc-200 dark:hover:text-amber-300 dark:hover:bg-white/[0.08]"
-                            }`}
-                          >
-                            <Pencil className="w-3 h-3" />
-                          </button>
+                          <Tooltip content="Переименовать категорию" position="top">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!currentUser) {
+                                  onOpenAuth("Авторизуйтесь, чтобы переименовывать категории")
+                                  return
+                                }
+                                setEditingCategoryId(cat.id)
+                                setEditingCatName(cat.name)
+                                setEditingCatColor(getCategoryHex(cat.color))
+                              }}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                                isSelected
+                                  ? "text-white/80 hover:text-white hover:bg-white/20"
+                                  : "text-slate-400 hover:text-amber-500 hover:bg-white/60 dark:hover:text-amber-300 dark:hover:bg-white/[0.08]"
+                              }`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          </Tooltip>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!currentUser) {
-                                onOpenAuth("Авторизуйтесь, чтобы удалять категории")
-                                return
-                              }
-                              setCategoryToDelete(cat)
-                            }}
-                            title="Удалить категорию"
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
-                              isSelected
-                                ? "text-white/80 hover:text-white hover:bg-white/20"
-                                : "text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-500/10"
-                            }`}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                          <Tooltip content="Удалить категорию" position="top">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!currentUser) {
+                                  onOpenAuth("Авторизуйтесь, чтобы удалять категории")
+                                  return
+                                }
+                                setCategoryToDelete(cat)
+                              }}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                                isSelected
+                                  ? "text-white/80 hover:text-white hover:bg-white/20"
+                                  : "text-slate-400 hover:text-red-500 hover:bg-red-500/10 dark:hover:text-red-400"
+                              }`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </Tooltip>
                         </div>
                       </div>
                     </div>
@@ -712,7 +735,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 })}
 
                 {categories.length === 0 && !isCreatingCategory && (
-                  <div className="px-3 py-3 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                  <div className="px-3 py-3 text-center text-xs text-slate-400 dark:text-zinc-500">
                     Нет созданных категорий
                   </div>
                 )}
@@ -729,7 +752,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     }
                     setIsCreatingCategory(true)
                   }}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-2xl text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 bg-zinc-50 dark:bg-white/[0.02] hover:bg-zinc-100 dark:hover:bg-white/[0.05] border border-dashed border-zinc-200 dark:border-white/[0.1] transition-all cursor-pointer mt-2"
+                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-2xl text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 liquid-glass-subtle hover:bg-white/70 dark:hover:bg-white/[0.06] border-dashed border-white/40 dark:border-white/[0.1] transition-all cursor-pointer mt-2"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Новая категория</span>
@@ -742,9 +765,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* ================= ПРАВАЯ ОБЛАСТЬ: СЕТКА ЛЕКЦИЙ (9 колонок) ================= */}
         <section className="lg:col-span-9 space-y-6">
           {/* Заголовок текущего раздела */}
-          <div className="flex items-center justify-between flex-wrap gap-4 pb-3 border-b border-zinc-200/80 dark:border-white/[0.06] transition-colors">
+          <div className="flex items-center justify-between flex-wrap gap-4 pb-3 border-b border-slate-200/80 dark:border-white/[0.08] transition-colors">
             <div>
-              <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2.5 transition-colors">
+              <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5 transition-colors">
                 {onlyFavorites ? (
                   <>
                     <Star className="w-5 h-5 text-amber-500 dark:text-amber-400 fill-amber-500 dark:fill-amber-400" />
@@ -753,24 +776,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 ) : selectedCategory ? (
                   <>
                     <span
-                      className="w-3 h-3 rounded-full shrink-0"
+                      className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm"
                       style={{ backgroundColor: getCategoryHex(selectedCategory.color) }}
                     />
                     <span>{selectedCategory.name}</span>
                   </>
                 ) : (
                   <>
-                    <Film className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <Film className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
                     <span>Все видеолекции</span>
                   </>
                 )}
 
-                <span className="text-xs font-mono font-normal text-zinc-600 dark:text-zinc-400 px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200 dark:border-white/[0.08]">
+                <span className="text-xs font-mono font-normal text-slate-600 dark:text-zinc-300 px-2.5 py-0.5 rounded-full liquid-glass-subtle">
                   {filteredLectures.length}
                 </span>
               </h2>
 
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 transition-colors">
+              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 transition-colors">
                 {onlyFavorites
                   ? "Лекции, отмеченные звездочкой для быстрого повторения"
                   : selectedCategory
@@ -782,22 +805,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center gap-2.5">
               {/* Выпадающий список сортировки */}
               <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsSortOpen(!isSortOpen)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-100 dark:bg-white/[0.05] hover:bg-zinc-200 dark:hover:bg-white/[0.08] text-xs font-medium text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-white/[0.08] transition-all cursor-pointer"
-                  title="Сортировка лекций"
-                >
-                  <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
-                  <span className="hidden sm:inline">
-                    {SORT_OPTIONS.find((s) => s.id === sortBy)?.label || "Сортировка"}
-                  </span>
-                  <ChevronDown className="w-3 h-3 opacity-60" />
-                </button>
+                <Tooltip content="Сортировка лекций" position="top">
+                  <button
+                    type="button"
+                    onClick={() => setIsSortOpen(!isSortOpen)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl liquid-btn-glass text-xs font-medium text-slate-700 dark:text-zinc-300 transition-all cursor-pointer"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400" />
+                    <span className="hidden sm:inline">
+                      {SORT_OPTIONS.find((s) => s.id === sortBy)?.label || "Сортировка"}
+                    </span>
+                    <ChevronDown className="w-3 h-3 opacity-60" />
+                  </button>
+                </Tooltip>
 
                 {isSortOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 w-52 py-1.5 rounded-2xl bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-white/[0.1] shadow-2xl z-30 space-y-0.5">
-                    <div className="px-3 py-1 text-[10px] uppercase font-semibold text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-white/[0.06]">
+                  <div className="absolute right-0 top-full mt-1.5 w-52 py-1.5 rounded-2xl liquid-glass-modal shadow-2xl z-30 space-y-0.5">
+                    <div className="px-3 py-1 text-[10px] uppercase font-semibold text-slate-400 dark:text-zinc-500 border-b border-slate-200/60 dark:border-white/[0.06]">
                       Сортировка
                     </div>
                     {SORT_OPTIONS.map((opt) => (
@@ -810,12 +834,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         }}
                         className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors cursor-pointer ${
                           sortBy === opt.id
-                            ? "text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-500/10"
-                            : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
+                            ? "text-cyan-600 dark:text-cyan-400 font-semibold bg-cyan-500/10"
+                            : "text-slate-700 dark:text-zinc-300 hover:bg-white/60 dark:hover:bg-white/[0.06]"
                         }`}
                       >
                         <span>{opt.label}</span>
-                        {sortBy === opt.id && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                        {sortBy === opt.id && <Check className="w-3.5 h-3.5 text-cyan-500" />}
                       </button>
                     ))}
                   </div>
@@ -825,7 +849,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <button
                 type="button"
                 onClick={handleUploadClick}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition-all shadow-glow cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl liquid-btn-primary text-xs font-semibold text-white transition-all shadow-liquid-btn cursor-pointer shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Добавить лекцию</span>
@@ -835,8 +859,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {/* Сетка карточек лекций */}
           {filteredLectures.length === 0 ? (
-            <div className="text-center py-16 border border-dashed border-zinc-200 dark:border-white/[0.08] rounded-3xl bg-white/40 dark:bg-white/[0.01] p-8 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-white/[0.05] text-zinc-400 dark:text-zinc-500 flex items-center justify-center mx-auto">
+            <div className="text-center py-16 border border-dashed border-slate-300/70 dark:border-white/[0.12] rounded-3xl liquid-glass p-8 space-y-4">
+              <div className="w-12 h-12 rounded-2xl liquid-glass-subtle text-slate-400 dark:text-zinc-500 flex items-center justify-center mx-auto">
                 {onlyFavorites ? (
                   <Star className="w-6 h-6 text-amber-500/70 dark:text-amber-400/60" />
                 ) : (
@@ -844,14 +868,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 )}
               </div>
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
                   {onlyFavorites
                     ? "У вас пока нет лекций в избранном"
                     : selectedCategoryId !== null
                     ? "В выбранной категории пока нет лекций"
                     : "В библиотеке пока нет лекций"}
                 </h3>
-                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-sm mx-auto">
                   {onlyFavorites
                     ? "Нажимайте на звездочку на карточке любой лекции, чтобы добавить её в избранное для быстрого доступа."
                     : selectedCategoryId !== null
@@ -863,7 +887,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onToggleOnlyFavorites(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-medium bg-zinc-100 dark:bg-white/[0.06] hover:bg-zinc-200 dark:hover:bg-white/[0.1] text-zinc-800 dark:text-white transition-all border border-zinc-200 dark:border-white/[0.08] cursor-pointer inline-flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl text-xs font-medium liquid-btn-glass text-slate-800 dark:text-white transition-all cursor-pointer inline-flex items-center gap-2"
                 >
                   <span>Ко всем лекциям</span>
                 </button>
@@ -871,7 +895,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <button
                   type="button"
                   onClick={handleUploadClick}
-                  className="px-4 py-2 rounded-xl text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-glow inline-flex items-center gap-2 cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-medium liquid-btn-primary text-white transition-all shadow-liquid-btn inline-flex items-center gap-2 cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>Загрузить лекцию</span>
@@ -897,26 +921,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 return (
                   <motion.div
                     key={lecture.id}
-                    whileHover={{ y: -3 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                    whileHover={{ y: -4 }}
+                    transition={{ type: "spring", stiffness: 320, damping: 26 }}
                     onClick={() => {
                       if (isReady) {
                         onSelectLecture(lecture.id)
                       }
                     }}
-                    className={`relative flex flex-col justify-between p-5 rounded-3xl bg-white dark:bg-[#121215] border border-zinc-200/80 dark:border-white/[0.08] transition-all shadow-sm dark:shadow-md ${
-                      isReady
-                        ? "hover:border-zinc-300 dark:hover:border-white/[0.2] hover:shadow-xl cursor-pointer group"
-                        : "cursor-default"
+                    onMouseEnter={handleSpotlightMouseMove}
+                    onMouseMove={handleSpotlightMouseMove}
+                    className={`relative flex flex-col justify-between p-5 rounded-3xl liquid-glass-card shadow-liquid-card-light dark:shadow-liquid-card transition-all ${
+                      isReady ? "cursor-pointer group" : "cursor-default"
                     }`}
                   >
+                    {/* Интерактивный стеклянный блик за курсором */}
+                    <div className="liquid-card-spotlight pointer-events-none" aria-hidden="true" />
+
                     {/* Верхняя секция карточки */}
-                    <div>
+                    <div className="relative z-10">
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200/80 dark:border-white/[0.06] flex items-center justify-center text-zinc-600 dark:text-zinc-300 shrink-0">
+                          <div className="w-7 h-7 rounded-lg liquid-glass-subtle flex items-center justify-center text-slate-600 dark:text-zinc-300 shrink-0">
                             {lecture.source_type === "url" ? (
-                              <Link className="w-3.5 h-3.5 text-blue-500" />
+                              <Link className="w-3.5 h-3.5 text-cyan-500" />
                             ) : (
                               <Film className="w-3.5 h-3.5" />
                             )}
@@ -924,100 +951,104 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                           {/* Категория лекции (кнопка смены категории) */}
                           {lecture.category ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (!currentUser) {
-                                  onOpenAuth("Авторизуйтесь, чтобы менять категории лекций")
-                                  return
-                                }
-                                setLectureToAssignCategory(lecture)
-                              }}
-                              title="Нажмите, чтобы изменить категорию"
-                              className="px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1 border hover:brightness-110 transition-all cursor-pointer"
-                              style={{
-                                backgroundColor: `${getCategoryHex(lecture.category.color)}18`,
-                                color: getCategoryHex(lecture.category.color),
-                                borderColor: `${getCategoryHex(lecture.category.color)}35`,
-                              }}
-                            >
-                              <Tag className="w-2.5 h-2.5" />
-                              <span>{lecture.category.name}</span>
-                              <ChevronDown className="w-2.5 h-2.5 opacity-60 ml-0.5" />
-                            </button>
+                            <Tooltip content="Нажмите, чтобы изменить категорию" position="top">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!currentUser) {
+                                    onOpenAuth("Авторизуйтесь, чтобы менять категории лекций")
+                                    return
+                                  }
+                                  setLectureToAssignCategory(lecture)
+                                }}
+                                className="px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1 border backdrop-blur-md hover:brightness-110 transition-all cursor-pointer shadow-sm"
+                                style={{
+                                  backgroundColor: `${getCategoryHex(lecture.category.color)}20`,
+                                  color: getCategoryHex(lecture.category.color),
+                                  borderColor: `${getCategoryHex(lecture.category.color)}40`,
+                                }}
+                              >
+                                <Tag className="w-2.5 h-2.5" />
+                                <span>{lecture.category.name}</span>
+                                <ChevronDown className="w-2.5 h-2.5 opacity-60 ml-0.5" />
+                              </button>
+                            </Tooltip>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (!currentUser) {
-                                  onOpenAuth("Авторизуйтесь, чтобы указать категорию лекции")
-                                  return
-                                }
-                                setLectureToAssignCategory(lecture)
-                              }}
-                              title="Указать категорию для этой лекции"
-                              className="px-2 py-0.5 rounded-md text-[10px] font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-white bg-zinc-50 dark:bg-white/[0.03] hover:bg-zinc-100 dark:hover:bg-white/[0.08] border border-dashed border-zinc-200 dark:border-white/[0.12] flex items-center gap-1 transition-all cursor-pointer"
-                            >
-                              <Tag className="w-2.5 h-2.5 text-zinc-400" />
-                              <span>+ Категория</span>
-                            </button>
+                            <Tooltip content="Указать категорию для этой лекции" position="top">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!currentUser) {
+                                    onOpenAuth("Авторизуйтесь, чтобы указать категорию лекции")
+                                    return
+                                  }
+                                  setLectureToAssignCategory(lecture)
+                                }}
+                                className="px-2 py-0.5 rounded-md text-[10px] font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white liquid-glass-subtle hover:bg-white/70 dark:hover:bg-white/[0.08] border-dashed border-slate-300 dark:border-white/[0.12] flex items-center gap-1 transition-all cursor-pointer"
+                              >
+                                <Tag className="w-2.5 h-2.5 text-slate-400" />
+                                <span>+ Категория</span>
+                              </button>
+                            </Tooltip>
                           )}
                         </div>
 
                         {/* Кнопки действий: Избранное (звезда) и Удаление */}
                         <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => handleFavoriteClick(e, lecture.id)}
-                            title={isFav ? "Удалить из избранного" : "Добавить в избранное"}
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                              isFav
-                                ? "text-amber-500 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
-                                : "text-zinc-400 dark:text-zinc-500 hover:text-amber-500 hover:bg-zinc-100 dark:hover:bg-white/[0.06]"
-                            }`}
-                          >
-                            <Star
-                              className={`w-3.5 h-3.5 transition-transform ${
-                                isFav ? "fill-amber-500 dark:fill-amber-400 scale-110" : ""
+                          <Tooltip content={isFav ? "Удалить из избранного" : "Добавить в избранное"} position="top">
+                            <button
+                              type="button"
+                              onClick={(e) => handleFavoriteClick(e, lecture.id)}
+                              className={`w-7 h-7 rounded-lg liquid-glass-subtle flex items-center justify-center transition-all cursor-pointer ${
+                                isFav
+                                  ? "text-amber-500 dark:text-amber-400 bg-amber-500/15 border-amber-500/30"
+                                  : "text-slate-400 dark:text-zinc-500 hover:text-amber-500 hover:bg-white/70 dark:hover:bg-white/[0.08]"
                               }`}
-                            />
-                          </button>
+                            >
+                              <Star
+                                className={`w-3.5 h-3.5 transition-transform ${
+                                  isFav ? "fill-amber-500 dark:fill-amber-400 scale-110" : ""
+                                }`}
+                              />
+                            </button>
+                          </Tooltip>
 
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setLectureToDelete(lecture)
-                            }}
-                            title="Удалить лекцию"
-                            className="w-7 h-7 rounded-lg text-zinc-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex items-center justify-center cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <Tooltip content="Удалить лекцию" position="top">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setLectureToDelete(lecture)
+                              }}
+                              className="w-7 h-7 rounded-lg liquid-glass-subtle text-slate-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center justify-center cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </Tooltip>
                         </div>
                       </div>
 
-                      <h3 className="text-base font-semibold text-zinc-900 dark:text-white tracking-tight line-clamp-2 mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-300 transition-colors">
+                      <h3 className="text-base font-semibold text-slate-900 dark:text-white tracking-tight line-clamp-2 mb-2 group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors">
                         {lecture.title}
                       </h3>
 
                       {/* Индикатор прогресса просмотра */}
                       {hasProgress && (
-                        <div className="mt-2.5 mb-1 space-y-1.5 p-2 rounded-xl bg-blue-500/[0.05] dark:bg-blue-600/[0.08] border border-blue-500/20">
+                        <div className="mt-2.5 mb-1 space-y-1.5 p-2 rounded-xl liquid-glass-subtle border border-cyan-500/25">
                           <div className="flex items-center justify-between text-[10px] font-mono">
-                            <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-semibold">
+                            <span className="flex items-center gap-1 text-cyan-600 dark:text-cyan-400 font-semibold">
                               <Play className="w-2.5 h-2.5 fill-current" />
                               Просмотрено {progressPercent}%
                             </span>
-                            <span className="text-zinc-500 dark:text-zinc-400 font-medium">
+                            <span className="text-slate-500 dark:text-zinc-400 font-medium">
                               {formatTimecode(progressSec)} / {formatTimecode(lecture.duration)}
                             </span>
                           </div>
-                          <div className="h-1 w-full bg-zinc-200/80 dark:bg-white/[0.08] rounded-full overflow-hidden">
+                          <div className="h-1 w-full bg-slate-200/80 dark:bg-white/[0.08] rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all"
+                              className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 rounded-full transition-all"
                               style={{ width: `${progressPercent}%` }}
                             />
                           </div>
@@ -1026,25 +1057,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
 
                     {/* Нижняя секция: статус или метрики */}
-                    <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-white/[0.06]">
+                    <div className="relative z-10 mt-4 pt-3 border-t border-slate-200/60 dark:border-white/[0.06]">
                       {isReady ? (
                         <div className="space-y-3">
-                          <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-                            <div className="flex items-center gap-1.5 font-mono">
-                              <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400">
+                            <div className="flex items-center gap-1.5 font-mono liquid-glass-subtle px-2 py-0.5 rounded-md">
+                              <Clock className="w-3.5 h-3.5 text-cyan-500" />
                               <span>{formatTimecode(lecture.duration)}</span>
                             </div>
-                            <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-500/20">
+                            <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 liquid-glass-subtle px-2 py-0.5 rounded-md border border-emerald-500/25">
                               <span>Готово к изучению</span>
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
                             <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-zinc-400" />
+                              <Calendar className="w-3 h-3 text-slate-400" />
                               {formatDate(lecture.created_at)}
                             </span>
-                            <span className="flex items-center gap-0.5 text-blue-600 dark:text-blue-400 font-medium group-hover:translate-x-1 transition-transform">
+                            <span className="flex items-center gap-0.5 text-cyan-600 dark:text-cyan-400 font-medium group-hover:translate-x-1 transition-transform">
                               Открыть
                               <ChevronRight className="w-3 h-3" />
                             </span>
@@ -1068,9 +1099,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 e.stopPropagation()
                                 onRetryLecture(lecture.id)
                               }}
-                              className="w-full py-1.5 px-3 rounded-lg bg-zinc-100 dark:bg-white/[0.06] hover:bg-zinc-200 dark:hover:bg-white/[0.12] border border-zinc-200 dark:border-white/[0.1] text-xs text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-all flex items-center justify-center gap-1.5 font-medium cursor-pointer"
+                              className="w-full py-1.5 px-3 rounded-lg liquid-btn-glass text-xs text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-all flex items-center justify-center gap-1.5 font-medium cursor-pointer"
                             >
-                              <RotateCw className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                              <RotateCw className="w-3.5 h-3.5 text-cyan-500 dark:text-cyan-400" />
                               <span>Повторить обработку</span>
                             </button>
                           )}
@@ -1079,11 +1110,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         /* Пошаговый степпер обработки лекции */
                         <div className="space-y-2.5 py-1">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1.5">
+                            <span className="text-cyan-600 dark:text-cyan-400 font-medium flex items-center gap-1.5">
                               <Loader2 className="w-3 h-3 animate-spin" />
                               {PIPELINE_STEPS[currentStepIdx]?.label || "Обработка..."}
                             </span>
-                            <span className="text-zinc-400 dark:text-zinc-500 font-mono text-[10px]">
+                            <span className="text-slate-400 dark:text-zinc-500 font-mono text-[10px]">
                               {currentStepIdx + 1}/4
                             </span>
                           </div>
@@ -1094,21 +1125,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               const isCurrent = idx === currentStepIdx
 
                               return (
-                                <div
+                                <Tooltip
                                   key={step.key}
-                                  className="space-y-1"
-                                  title={step.label}
+                                  content={step.label}
+                                  position="top"
+                                  className="w-full"
                                 >
-                                  <div
-                                    className={`h-1.5 rounded-full transition-all duration-300 ${
-                                      isCompleted
-                                        ? "bg-blue-600 dark:bg-blue-500"
-                                        : isCurrent
-                                        ? "bg-blue-400 animate-pulse"
-                                        : "bg-zinc-200 dark:bg-white/[0.08]"
-                                    }`}
-                                  />
-                                </div>
+                                  <div className="w-full space-y-1">
+                                    <div
+                                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                                        isCompleted
+                                          ? "bg-gradient-to-r from-cyan-500 to-blue-600 shadow-sm"
+                                          : isCurrent
+                                          ? "bg-cyan-400 animate-pulse shadow-sm"
+                                          : "bg-slate-200/80 dark:bg-white/[0.08]"
+                                      }`}
+                                    />
+                                  </div>
+                                </Tooltip>
                               )
                             })}
                           </div>
