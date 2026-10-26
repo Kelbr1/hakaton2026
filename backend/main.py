@@ -29,9 +29,12 @@ from .llm_service import (
     get_ollama_status,
 )
 from .media_utils import (
+    AUDIO_DIR,
+    VIDEOS_DIR,
     download_video_from_url,
     extract_audio,
     get_video_duration,
+    resolve_media_path,
     save_uploaded_video,
 )
 from .models import (
@@ -866,7 +869,7 @@ def retry_lecture_processing(
             lecture.source_url,
             lecture.title,
         )
-    elif lecture.video_path and Path(lecture.video_path).is_file():
+    elif lecture.video_path and resolve_media_path(lecture.video_path, VIDEOS_DIR):
         lecture.status = "extracting_audio"
         session.add(lecture)
         session.commit()
@@ -895,13 +898,14 @@ def stream_lecture_video(
             detail="Видеофайл не найден для указанной лекции",
         )
 
-    video_path = Path(lecture.video_path)
-    if not video_path.is_file():
+    video_file = resolve_media_path(lecture.video_path, VIDEOS_DIR)
+    if not video_file or not video_file.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Файл видео физически отсутствует на сервере",
         )
 
+    video_path = video_file
     file_size = video_path.stat().st_size
     if not range_header:
         return FileResponse(

@@ -45,6 +45,28 @@ def check_dependencies() -> None:
             print("[Внимание] Не удалось установить некоторые пакеты. Продолжаем запуск...")
 
 
+def check_media_integrity() -> None:
+    videos_dir = ROOT_DIR / "backend" / "storage" / "videos"
+    if not videos_dir.is_dir():
+        return
+    lfs_pointers = []
+    for f in videos_dir.glob("*.mp4"):
+        if f.stat().st_size < 300:
+            try:
+                with open(f, "rb") as fp:
+                    if fp.read(100).startswith(b"version https://git-lfs.github.com"):
+                        lfs_pointers.append(f.name)
+            except Exception:
+                pass
+    if lfs_pointers:
+        print(f"[Внимание] Обнаружены файлы-указатели Git LFS вместо видео: {', '.join(lfs_pointers)}")
+        print("Попытка загрузки оригиналов через git lfs pull...")
+        try:
+            subprocess.run(["git", "lfs", "pull"], cwd=str(ROOT_DIR))
+        except Exception:
+            pass
+
+
 def main() -> None:
     print("=" * 65)
     print("  Киберрывок 2026: Семантический поиск по видеолекциям")
@@ -53,6 +75,7 @@ def main() -> None:
 
     # 0. Быстрая проверка пакетов
     check_dependencies()
+    check_media_integrity()
 
     # 1. Запуск Backend (FastAPI + Uvicorn)
     print("[1/2] Запуск сервера на http://127.0.0.1:8000...")

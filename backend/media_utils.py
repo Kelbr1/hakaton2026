@@ -18,6 +18,24 @@ VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def resolve_media_path(
+    raw_path: Optional[Union[str, Path]],
+    default_dir: Path,
+) -> Optional[Path]:
+    if not raw_path:
+        return None
+    p = Path(raw_path)
+    if p.is_file():
+        return p
+    in_root = BASE_DIR.parent / raw_path
+    if in_root.is_file():
+        return in_root
+    in_default = default_dir / p.name
+    if in_default.is_file():
+        return in_default
+    return None
+
+
 def _resolve_binary(name: str) -> Optional[str]:
     in_path = shutil.which(name)
     if in_path:
@@ -138,8 +156,8 @@ def extract_audio(
     video_path: Union[str, Path],
     audio_id: Optional[str] = None,
 ) -> Path:
-    video_file = Path(video_path)
-    if not video_file.is_file():
+    video_file = resolve_media_path(video_path, VIDEOS_DIR)
+    if not video_file or not video_file.is_file():
         raise FileNotFoundError(f"Видеофайл не найден: {video_path}")
 
     if not audio_id:
@@ -177,8 +195,8 @@ def extract_audio(
 
 
 def get_video_duration(video_path: Union[str, Path]) -> float:
-    video_file = Path(video_path)
-    if not video_file.is_file():
+    video_file = resolve_media_path(video_path, VIDEOS_DIR)
+    if not video_file or not video_file.is_file():
         raise FileNotFoundError(f"Видеофайл не найден: {video_path}")
 
     ffprobe_bin = get_ffprobe_path()
