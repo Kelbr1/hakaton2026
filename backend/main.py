@@ -885,6 +885,60 @@ def retry_lecture_processing(
     return lecture
 
 
+@app.post("/api/lectures/{id}/resummarize", response_model=Lecture)
+def resummarize_lecture(
+    id: int,
+    session: Session = Depends(get_session),
+    current_user: Optional[User] = Depends(get_current_user),
+) -> Lecture:
+    lecture = session.get(Lecture, id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Лекция с идентификатором {id} не найдена",
+        )
+    segments = list(lecture.segments)
+    if not segments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Транскрипт лекции отсутствует. Сначала выполните обработку видео.",
+        )
+
+    for ch in list(lecture.chapters):
+        session.delete(ch)
+    for term in list(lecture.glossary_terms):
+        session.delete(term)
+
+    summary_md, chapters, glossary = generate_lecture_artifacts(
+        segments=segments,
+        lecture_title=lecture.title,
+        duration=lecture.duration,
+    )
+    lecture.summary_markdown = summary_md
+    for ch in chapters:
+        session.add(
+            LectureChapter(
+                lecture_id=lecture.id,
+                title=ch["title"],
+                start_time=ch["start_time"],
+                summary=ch["summary"],
+            )
+        )
+    for g in glossary:
+        session.add(
+            GlossaryTerm(
+                lecture_id=lecture.id,
+                term=g["term"],
+                definition=g["definition"],
+                first_timecode=g["first_timecode"],
+            )
+        )
+    session.add(lecture)
+    session.commit()
+    session.refresh(lecture)
+    return lecture
+
+
 @app.get("/api/lectures/{id}/stream")
 def stream_lecture_video(
     id: int,
@@ -1023,6 +1077,17 @@ def get_system_status() -> Dict[str, Any]:
         },
         "ollama": ollama_info,
     }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def get_favicon() -> Response:
+    for candidate in [
+        ROOT_DIR / "frontend" / "dist" / "favicon.svg",
+        ROOT_DIR / "frontend" / "public" / "favicon.svg",
+    ]:
+        if candidate.is_file():
+            return FileResponse(candidate, media_type="image/svg+xml")
+    return Response(status_code=204)
 
 
 # Раздача собранного SPA-фронтенда для автономной работы без dev-сервера Node.js

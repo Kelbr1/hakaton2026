@@ -15,6 +15,96 @@ MODEL_PRIORITY: List[str] = ["qwen2.5:7b", "qwen2.5:3b", "llama3.2"]
 _status_cache: Dict[str, Any] = {"data": None, "time": 0.0}
 
 
+def russian_stem(word: str) -> str:
+    w = word.lower().strip()
+    endings = [
+        "овского", "евского", "овскому", "евскому",
+        "ического", "ическому", "ическим", "ических",
+        "овский", "евский", "овская", "евская", "овское", "евское",
+        "ический", "ическая", "ическое", "ические", "ической", "ическую",
+        "енного", "енному", "енным", "енных", "енный", "енная", "енное", "енные",
+        "нного", "нному", "нным", "нных", "нный", "нная", "нное", "нные",
+        "ого", "его", "ому", "ему", "ыми", "ими", "ых", "их", "ую", "юю",
+        "ый", "ий", "ой", "ей", "ая", "яя", "ое", "ее", "ые", "ие",
+        "ов", "ев", "ей", "ом", "ем", "ам", "ям", "ах", "ях",
+        "а", "я", "у", "ю", "о", "е", "ы", "и",
+    ]
+    for end in endings:
+        if w.endswith(end) and len(w) - len(end) >= 3:
+            return w[:-len(end)]
+    return w
+
+
+def find_term_timecode(
+    term: str,
+    segments: List[TranscriptSegment],
+    fallback_time: float = 0.0,
+) -> float:
+    clean = term.strip().lower()
+    words = [w for w in re.findall(r"[а-яa-z0-9]+", clean) if len(w) >= 3]
+    if not words:
+        return fallback_time
+
+    stems = [russian_stem(w) for w in words]
+
+    # 1. Точная фраза по границам слов при нескольких словах
+    if len(words) >= 2:
+        phrase_pattern = r"\b" + r"\s+".join(re.escape(w) for w in words) + r"\b"
+        for s in segments:
+            if re.search(phrase_pattern, s.text.lower()):
+                return round(s.start_time, 1)
+
+    # 2. Совпадение всех корней слов как отдельных токенов в одном сегменте
+    for s in segments:
+        seg_tokens = re.findall(r"[а-яa-z0-9]+", s.text.lower())
+        seg_stems = [russian_stem(t) for t in seg_tokens]
+        if all(stem in seg_stems for stem in stems):
+            return round(s.start_time, 1)
+
+    # 3. Для составных терминов: совпадение корней в паре соседних сегментов
+    if len(stems) >= 2:
+        for i in range(len(segments) - 1):
+            pair_tokens = re.findall(
+                r"[а-яa-z0-9]+",
+                (segments[i].text + " " + segments[i + 1].text).lower(),
+            )
+            pair_stems = [russian_stem(t) for t in pair_tokens]
+            if all(stem in pair_stems for stem in stems):
+                return round(segments[i].start_time, 1)
+
+    # 4. Одиночный термин или совпадение главного корня по токенам
+    for s in segments:
+        seg_tokens = re.findall(r"[а-яa-z0-9]+", s.text.lower())
+        seg_stems = [russian_stem(t) for t in seg_tokens]
+        if stems[0] in seg_stems:
+            return round(s.start_time, 1)
+
+    return fallback_time
+
+
+def parse_timecode_to_seconds(raw_val: Any) -> float:
+    if isinstance(raw_val, (int, float)):
+        return max(0.0, float(raw_val))
+    if not isinstance(raw_val, str):
+        return 0.0
+    val = raw_val.strip("[] \t\r\n")
+    if not val:
+        return 0.0
+    if ":" in val:
+        parts = val.split(":")
+        try:
+            if len(parts) == 2:
+                return round(float(parts[0]) * 60 + float(parts[1]), 1)
+            elif len(parts) == 3:
+                return round(float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2]), 1)
+        except ValueError:
+            pass
+    try:
+        return round(float(val), 1)
+    except ValueError:
+        return 0.0
+
+
 def _format_timecode(seconds: float) -> str:
     total_sec = max(0, int(seconds))
     mins = total_sec // 60
@@ -133,6 +223,11 @@ def _algorithmic_fallback_summary(
         "это", "как", "что", "для", "при", "все", "так", "уже", "если",
         "когда", "быть", "было", "будет", "может", "можно", "также",
         "этого", "после", "через", "только", "более", "очень", "своей",
+        "здравствуйте", "привет", "скажи", "никто", "подписывайся",
+        "подписывайтесь", "первое", "второе", "третье", "давайте",
+        "смотрите", "кстати", "владислав", "интенсив", "курс", "course",
+        "intensive", "канал", "лайк", "колокольчик", "видео", "урок",
+        "сегодня", "сейчас", "просто", "вообще", "наверное", "короче",
     }
 
     for seg in segments:
@@ -231,19 +326,24 @@ def generate_lecture_artifacts(
     # Ограничиваем объем текста для стабильной работы локальных LLM
     transcript_preview = "\n".join(formatted_transcript_parts[:400])
 
+    dur_str = _format_timecode(duration)
     prompt = (
         f"Ты опытный академический редактор. Ниже приведен транскрипт "
-        f"видеолекции «{lecture_title}» с таймкодами [MM:SS]. "
-        "Составь структурированный конспект, разделы и глоссарий.\n\n"
+        f"видеолекции «{lecture_title}» общей длительностью {dur_str}.\n"
+        f"Перед каждой фразой в квадратных скобках указан точный таймкод [MM:SS].\n\n"
         f"Транскрипт:\n{transcript_preview}\n\n"
+        "Инструкции:\n"
+        "1. Составь структурированный конспект лекции в Markdown на русском языке с ключевыми выводами.\n"
+        f"2. Разбей лекцию на 3-6 логических глав, охватывающих ВСЮ длительность лекции (от 00:00 до {dur_str}). Для каждой главы укажи 'timecode' в формате 'MM:SS' строго из транскрипта, где начинается данная тема.\n"
+        "3. Выдели 5-10 ключевых научных/учебных терминов лекции и дай им четкие определения.\n\n"
         "Ответь СТРОГО в формате JSON:\n"
         "{\n"
-        '  "summary_markdown": "Конспект лекции в Markdown на русском языке.",\n'
+        '  "summary_markdown": "# Конспект лекции\\n\\n...",\n'
         '  "chapters": [\n'
-        '    {"title": "Раздел", "start_time": 0.0, "summary": "Текст"}\n'
+        '    {"title": "Название раздела", "timecode": "00:00", "summary": "Краткое содержание раздела"}\n'
         "  ],\n"
         '  "glossary": [\n'
-        '    {"term": "Термин", "definition": "Определение", "first_timecode": 0.0}\n'
+        '    {"term": "Термин", "definition": "Определение термина"}\n'
         "  ]\n"
         "}"
     )
@@ -269,25 +369,43 @@ def generate_lecture_artifacts(
                 chapters_raw = parsed.get("chapters", [])
                 glossary_raw = parsed.get("glossary", [])
 
-                chapters: List[Dict[str, Any]] = [
-                    {
-                        "title": str(c.get("title", f"Раздел {i + 1}")),
-                        "start_time": float(c.get("start_time", 0.0)),
-                        "summary": str(c.get("summary", "")),
-                    }
-                    for i, c in enumerate(chapters_raw)
-                    if isinstance(c, dict)
-                ]
+                chapters: List[Dict[str, Any]] = []
+                last_time = 0.0
+                for i, c in enumerate(chapters_raw):
+                    if not isinstance(c, dict):
+                        continue
+                    ch_title = str(c.get("title", f"Раздел {i + 1}")).strip()
+                    raw_tc = c.get("timecode") or c.get("start_time")
+                    parsed_sec = parse_timecode_to_seconds(raw_tc)
+                    if parsed_sec < last_time or parsed_sec > duration:
+                        if i == 0:
+                            parsed_sec = 0.0
+                        else:
+                            anchored = find_term_timecode(ch_title, segments, fallback_time=last_time)
+                            if anchored >= last_time and anchored <= duration:
+                                parsed_sec = anchored
+                            else:
+                                parsed_sec = last_time + 10.0
+                    last_time = parsed_sec
+                    chapters.append({
+                        "title": ch_title,
+                        "start_time": parsed_sec,
+                        "summary": str(c.get("summary", "")).strip(),
+                    })
 
-                glossary: List[Dict[str, Any]] = [
-                    {
-                        "term": str(g.get("term", "")),
-                        "definition": str(g.get("definition", "")),
-                        "first_timecode": float(g.get("first_timecode", 0.0)),
-                    }
-                    for g in glossary_raw
-                    if isinstance(g, dict) and g.get("term")
-                ]
+                glossary: List[Dict[str, Any]] = []
+                for g in glossary_raw:
+                    if not isinstance(g, dict) or not g.get("term"):
+                        continue
+                    term_name = str(g.get("term", "")).strip()
+                    raw_tc = parse_timecode_to_seconds(g.get("timecode") or g.get("first_timecode", 0.0))
+                    # Рассчитываем точный таймкод первого произнесения термина в речи
+                    exact_tc = find_term_timecode(term_name, segments, fallback_time=raw_tc)
+                    glossary.append({
+                        "term": term_name,
+                        "definition": str(g.get("definition", "")).strip(),
+                        "first_timecode": exact_tc,
+                    })
 
                 if summary_md and chapters:
                     return summary_md, chapters, glossary
