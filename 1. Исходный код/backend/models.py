@@ -67,6 +67,10 @@ class User(SQLModel, table=True):
         back_populates="user",
         cascade_delete=True,
     )
+    notes: List["LectureNote"] = Relationship(
+        back_populates="user",
+        cascade_delete=True,
+    )
 
 
 class UserSessionToken(SQLModel, table=True):
@@ -103,6 +107,7 @@ class LectureBase(SQLModel):
     source_url: Optional[str] = None
     video_path: Optional[str] = None
     audio_path: Optional[str] = None
+    thumbnail_path: Optional[str] = None
     duration: float = Field(default=0.0)
     status: str = Field(default="uploading")
     error_message: Optional[str] = None
@@ -132,6 +137,10 @@ class Lecture(LectureBase, table=True):
         cascade_delete=True,
     )
     glossary_terms: List["GlossaryTerm"] = Relationship(
+        back_populates="lecture",
+        cascade_delete=True,
+    )
+    notes: List["LectureNote"] = Relationship(
         back_populates="lecture",
         cascade_delete=True,
     )
@@ -178,6 +187,18 @@ class GlossaryTerm(SQLModel, table=True):
     lecture: Optional[Lecture] = Relationship(back_populates="glossary_terms")
 
 
+class LectureNote(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    lecture_id: int = Field(foreign_key="lecture.id", index=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
+    timecode: float
+    text: str
+    created_at: datetime = Field(default_factory=get_utc_now)
+
+    lecture: Optional[Lecture] = Relationship(back_populates="notes")
+    user: Optional[User] = Relationship(back_populates="notes")
+
+
 class UserResponse(BaseModel):
     id: int
     email: str
@@ -201,6 +222,7 @@ class LectureResponse(BaseModel):
     source_url: Optional[str] = None
     video_path: Optional[str] = None
     audio_path: Optional[str] = None
+    thumbnail_path: Optional[str] = None
     duration: float
     status: str
     error_message: Optional[str] = None
@@ -218,6 +240,7 @@ class LectureDetailResponse(BaseModel):
     source_url: Optional[str] = None
     video_path: Optional[str] = None
     audio_path: Optional[str] = None
+    thumbnail_path: Optional[str] = None
     duration: float
     status: str
     error_message: Optional[str] = None
@@ -263,6 +286,24 @@ class UpdateLectureRequest(BaseModel):
     category_id: Optional[int] = None
 
 
+class CreateNoteRequest(BaseModel):
+    timecode: float
+    text: str
+
+
+class UpdateNoteRequest(BaseModel):
+    text: str
+
+
+class LectureNoteResponse(BaseModel):
+    id: int
+    lecture_id: int
+    user_id: Optional[int] = None
+    timecode: float
+    text: str
+    created_at: datetime
+
+
 def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:
         yield session
@@ -271,7 +312,7 @@ def get_session() -> Generator[Session, None, None]:
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
 
-    # Проверка и добавление колонки category_id в таблицу lecture при необходимости
+    # Проверка и добавление колонок в таблицу lecture при необходимости
     with engine.connect() as conn:
         try:
             cursor = conn.exec_driver_sql("PRAGMA table_info(lecture)")
@@ -282,8 +323,41 @@ def create_db_and_tables() -> None:
                     "INTEGER REFERENCES category(id)"
                 )
                 conn.commit()
+            if "thumbnail_path" not in cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE lecture ADD COLUMN thumbnail_path "
+                    "VARCHAR"
+                )
+                conn.commit()
         except Exception:
             pass
+
+    # Автоматическая генерация превью для существующих лекций
+    try:
+        from .media_utils import THUMBNAILS_DIR, generate_thumbnail
+        with Session(engine) as session:
+            from sqlmodel import select
+            lecs = session.exec(select(Lecture)).all()
+            for lec in lecs:
+                needs_update = False
+                thumb_file = THUMBNAILS_DIR / f"lec_{lec.id}.jpg"
+                if not thumb_file.is_file() and lec.video_path:
+                    created = generate_thumbnail(
+                        video_path=lec.video_path,
+                        thumbnail_id=f"lec_{lec.id}",
+                        duration=lec.duration,
+                    )
+                    if created and created.is_file():
+                        thumb_file = created
+                        needs_update = True
+                if thumb_file.is_file() and not lec.thumbnail_path:
+                    lec.thumbnail_path = f"backend/storage/thumbnails/{thumb_file.name}"
+                    needs_update = True
+                if needs_update:
+                    session.add(lec)
+            session.commit()
+    except Exception:
+        pass
 
     # Инициализация базовых категорий
     with Session(engine) as session:

@@ -24,6 +24,8 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+~$*
+*.tmp
 
 # Documentation / Internal
 AGENT.md

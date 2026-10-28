@@ -26,13 +26,16 @@ from .demo_seeder import seed_demo_lecture
 from .llm_service import (
     answer_lecture_question,
     generate_lecture_artifacts,
+    generate_lecture_quiz,
     get_ollama_status,
 )
 from .media_utils import (
     AUDIO_DIR,
+    THUMBNAILS_DIR,
     VIDEOS_DIR,
     download_video_from_url,
     extract_audio,
+    generate_thumbnail,
     get_video_duration,
     resolve_media_path,
     save_uploaded_video,
@@ -41,16 +44,20 @@ from .models import (
     Category,
     CategoryResponse,
     CreateCategoryRequest,
+    CreateNoteRequest,
     GlossaryTerm,
     ImportUrlRequest,
     Lecture,
     LectureChapter,
     LectureDetailResponse,
+    LectureNote,
+    LectureNoteResponse,
     LectureResponse,
     LoginRequest,
     RegisterRequest,
     UpdateCategoryRequest,
     UpdateLectureRequest,
+    UpdateNoteRequest,
     User,
     UserFavorite,
     UserResponse,
@@ -156,6 +163,22 @@ def _run_ai_pipeline(lecture_id: int) -> None:
             return
 
         try:
+            # 0. Генерация превью обложки видео
+            if not lecture.thumbnail_path or not resolve_media_path(lecture.thumbnail_path, THUMBNAILS_DIR):
+                try:
+                    thumb_file = generate_thumbnail(
+                        video_path=lecture.video_path,
+                        thumbnail_id=f"lec_{lecture.id}",
+                        duration=lecture.duration,
+                    )
+                    if thumb_file:
+                        lecture.thumbnail_path = _to_rel_path(thumb_file)
+                        session.add(lecture)
+                        session.commit()
+                        session.refresh(lecture)
+                except Exception:
+                    pass
+
             # 1. Извлечение аудиодорожки
             lecture.status = "extracting_audio"
             session.add(lecture)
@@ -270,6 +293,18 @@ def process_url_pipeline(
             lecture.video_path = _to_rel_path(video_file)
             if not custom_title or not custom_title.strip():
                 lecture.title = fetched_title
+
+            # Генерация превью сразу после загрузки видео
+            try:
+                thumb_file = generate_thumbnail(
+                    video_path=video_file,
+                    thumbnail_id=f"lec_{lecture.id}",
+                )
+                if thumb_file:
+                    lecture.thumbnail_path = _to_rel_path(thumb_file)
+            except Exception:
+                pass
+
             session.add(lecture)
             session.commit()
         except Exception as exc:
@@ -316,6 +351,7 @@ def _lecture_to_response(
         source_url=lecture.source_url,
         video_path=lecture.video_path,
         audio_path=lecture.audio_path,
+        thumbnail_path=lecture.thumbnail_path,
         duration=lecture.duration,
         status=lecture.status,
         error_message=lecture.error_message,
@@ -642,6 +678,18 @@ def upload_lecture(
             video_id=f"lec_{lecture.id}",
         )
         lecture.video_path = _to_rel_path(video_path)
+
+        # Генерация превью обложки сразу при загрузке
+        try:
+            thumb_file = generate_thumbnail(
+                video_path=video_path,
+                thumbnail_id=f"lec_{lecture.id}",
+            )
+            if thumb_file:
+                lecture.thumbnail_path = _to_rel_path(thumb_file)
+        except Exception:
+            pass
+
         session.add(lecture)
         session.commit()
         session.refresh(lecture)
@@ -771,6 +819,7 @@ def get_lecture(
         source_url=lecture.source_url,
         video_path=lecture.video_path,
         audio_path=lecture.audio_path,
+        thumbnail_path=lecture.thumbnail_path,
         duration=lecture.duration,
         status=lecture.status,
         error_message=lecture.error_message,
@@ -801,6 +850,15 @@ def delete_lecture(
         Path(lecture.video_path).unlink(missing_ok=True)
     if lecture.audio_path:
         Path(lecture.audio_path).unlink(missing_ok=True)
+    if lecture.thumbnail_path:
+        resolved_thumb = resolve_media_path(lecture.thumbnail_path, THUMBNAILS_DIR)
+        if resolved_thumb:
+            resolved_thumb.unlink(missing_ok=True)
+    (THUMBNAILS_DIR / f"lec_{id}.jpg").unlink(missing_ok=True)
+
+    notes = session.exec(select(LectureNote).where(LectureNote.lecture_id == id)).all()
+    for n in notes:
+        session.delete(n)
 
     session.delete(lecture)
     session.commit()
@@ -1028,6 +1086,56 @@ def stream_lecture_video(
     )
 
 
+@app.get("/api/lectures/{id}/thumbnail")
+def get_lecture_thumbnail(
+    id: int,
+    session: Session = Depends(get_session),
+) -> Response:
+    lecture = session.get(Lecture, id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Лекция с идентификатором {id} не найдена",
+        )
+
+    thumb_path = None
+    if lecture.thumbnail_path:
+        thumb_path = resolve_media_path(lecture.thumbnail_path, THUMBNAILS_DIR)
+
+    if not thumb_path or not thumb_path.is_file():
+        default_file = THUMBNAILS_DIR / f"lec_{lecture.id}.jpg"
+        if default_file.is_file():
+            thumb_path = default_file
+
+    # Если превью еще нет, но видеофайл доступен — генерируем на лету
+    if (not thumb_path or not thumb_path.is_file()) and lecture.video_path:
+        created = generate_thumbnail(
+            video_path=lecture.video_path,
+            thumbnail_id=f"lec_{lecture.id}",
+            duration=lecture.duration,
+        )
+        if created and created.is_file():
+            thumb_path = created
+            lecture.thumbnail_path = _to_rel_path(created)
+            session.add(lecture)
+            session.commit()
+
+    if not thumb_path or not thumb_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Превью для данной лекции пока не создано",
+        )
+
+    return FileResponse(
+        path=thumb_path,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+        },
+    )
+
+
+
 @app.get("/api/search")
 def search_lectures(
     q: str = Query(..., min_length=1, description="Поисковый запрос"),
@@ -1062,6 +1170,167 @@ def ask_question(
         lecture_id=id,
         session=session,
     )
+
+
+@app.get("/api/lectures/{id}/quiz")
+def get_lecture_quiz(
+    id: int,
+    regenerate: bool = Query(default=False),
+    session: Session = Depends(get_session),
+) -> Dict[str, Any]:
+    lecture = session.get(Lecture, id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Лекция с идентификатором {id} не найдена",
+        )
+
+    return generate_lecture_quiz(
+        lecture_id=id,
+        session=session,
+        force_regenerate=regenerate,
+    )
+
+
+# ================= ЗАМЕТКИ НА ТАЙМКОДАХ =================
+@app.get("/api/lectures/{id}/notes", response_model=List[LectureNoteResponse])
+def get_lecture_notes(
+    id: int,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+) -> List[LectureNoteResponse]:
+    lecture = session.get(Lecture, id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Лекция с идентификатором {id} не найдена",
+        )
+
+    statement = (
+        select(LectureNote)
+        .where(LectureNote.lecture_id == id)
+        .order_by(LectureNote.timecode.asc(), LectureNote.created_at.asc())
+    )
+    if user and user.id:
+        statement = statement.where(
+            (LectureNote.user_id == user.id) | (LectureNote.user_id == None)  # noqa: E711
+        )
+    notes = list(session.exec(statement).all())
+    return [
+        LectureNoteResponse(
+            id=n.id or 0,
+            lecture_id=n.lecture_id,
+            user_id=n.user_id,
+            timecode=n.timecode,
+            text=n.text,
+            created_at=n.created_at,
+        )
+        for n in notes
+    ]
+
+
+@app.post(
+    "/api/lectures/{id}/notes",
+    response_model=LectureNoteResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_lecture_note(
+    id: int,
+    payload: CreateNoteRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+) -> LectureNoteResponse:
+    lecture = session.get(Lecture, id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Лекция с идентификатором {id} не найдена",
+        )
+
+    clean_text = payload.text.strip()
+    if not clean_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Текст заметки не может быть пустым",
+        )
+
+    tc = max(0.0, round(payload.timecode, 1))
+    note = LectureNote(
+        lecture_id=id,
+        user_id=user.id if user else None,
+        timecode=tc,
+        text=clean_text,
+    )
+    session.add(note)
+    session.commit()
+    session.refresh(note)
+
+    return LectureNoteResponse(
+        id=note.id or 0,
+        lecture_id=note.lecture_id,
+        user_id=note.user_id,
+        timecode=note.timecode,
+        text=note.text,
+        created_at=note.created_at,
+    )
+
+
+@app.put(
+    "/api/lectures/{id}/notes/{note_id}",
+    response_model=LectureNoteResponse,
+)
+def update_lecture_note(
+    id: int,
+    note_id: int,
+    payload: UpdateNoteRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session),
+) -> LectureNoteResponse:
+    note = session.get(LectureNote, note_id)
+    if not note or note.lecture_id != id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Заметка с идентификатором {note_id} не найдена",
+        )
+
+    clean_text = payload.text.strip()
+    if not clean_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Текст заметки не может быть пустым",
+        )
+
+    note.text = clean_text
+    session.add(note)
+    session.commit()
+    session.refresh(note)
+
+    return LectureNoteResponse(
+        id=note.id or 0,
+        lecture_id=note.lecture_id,
+        user_id=note.user_id,
+        timecode=note.timecode,
+        text=note.text,
+        created_at=note.created_at,
+    )
+
+
+@app.delete("/api/lectures/{id}/notes/{note_id}")
+def delete_lecture_note(
+    id: int,
+    note_id: int,
+    session: Session = Depends(get_session),
+) -> Dict[str, Any]:
+    note = session.get(LectureNote, note_id)
+    if not note or note.lecture_id != id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Заметка с идентификатором {note_id} не найдена",
+        )
+
+    session.delete(note)
+    session.commit()
+    return {"success": True, "id": note_id}
 
 
 @app.get("/api/system/status")

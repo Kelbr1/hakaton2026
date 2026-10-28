@@ -72,6 +72,163 @@ const PIPELINE_STEPS = [
   { key: "summarizing", label: "Генерация конспекта" },
 ]
 
+interface LectureCardThumbnailProps {
+  lecture: Lecture
+  isReady: boolean
+  hasProgress: boolean
+  progressPercent: number
+  isFav: boolean
+  onFavoriteClick: (e: React.MouseEvent) => void
+  onDeleteClick: (e: React.MouseEvent) => void
+  onAssignCategoryClick: (e: React.MouseEvent) => void
+}
+
+const LectureCardThumbnail: React.FC<LectureCardThumbnailProps> = ({
+  lecture,
+  isReady,
+  hasProgress,
+  progressPercent,
+  isFav,
+  onFavoriteClick,
+  onDeleteClick,
+  onAssignCategoryClick,
+}) => {
+  const [imgError, setImgError] = useState<boolean>(false)
+  const [imgLoaded, setImgLoaded] = useState<boolean>(false)
+
+  return (
+    <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-slate-900/80 dark:bg-black/60 border border-slate-200/60 dark:border-white/[0.1] mb-3.5 shadow-sm group/thumb select-none">
+      {/* Фоновый градиент заглушки (пока изображение загружается или при ошибке) */}
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950/70 flex items-center justify-center">
+        <Film className="w-9 h-9 text-white/20" />
+      </div>
+
+      {/* Фото-превью видеокадра */}
+      {!imgError && (
+        <img
+          src={api.getThumbnailUrl(lecture.id)}
+          alt={lecture.title}
+          loading="lazy"
+          onLoad={() => setImgLoaded(true)}
+          onError={() => setImgError(true)}
+          className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 ${
+            imgLoaded ? "opacity-100" : "opacity-0"
+          } ${isReady ? "group-hover:scale-105" : ""}`}
+        />
+      )}
+
+      {/* Затемняющий градиент сверху и снизу для читаемости плашек */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/55 pointer-events-none" />
+
+      {/* Верхний оверлей: Категория и источник слева, Избранное и Удаление справа */}
+      <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 z-10">
+        <div className="flex items-center gap-1.5 flex-wrap max-w-[70%]">
+          {lecture.category ? (
+            <Tooltip content="Нажмите, чтобы изменить категорию" position="top">
+              <button
+                type="button"
+                onClick={onAssignCategoryClick}
+                className="px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1 backdrop-blur-md bg-black/55 border border-white/20 hover:bg-black/75 text-white transition-all cursor-pointer shadow-sm truncate"
+                style={{
+                  borderColor: `${getCategoryHex(lecture.category.color)}80`,
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: getCategoryHex(lecture.category.color) }}
+                />
+                <span className="truncate max-w-[100px]">{lecture.category.name}</span>
+                <ChevronDown className="w-2.5 h-2.5 opacity-60 ml-0.5 shrink-0" />
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip content="Указать категорию для этой лекции" position="top">
+              <button
+                type="button"
+                onClick={onAssignCategoryClick}
+                className="px-2 py-0.5 rounded-md text-[10px] font-medium text-white/90 backdrop-blur-md bg-black/45 hover:bg-black/70 border border-dashed border-white/30 flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+              >
+                <Tag className="w-2.5 h-2.5 text-white/70" />
+                <span>+ Категория</span>
+              </button>
+            </Tooltip>
+          )}
+
+          {/* Источник: URL или файл */}
+          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-mono backdrop-blur-md bg-black/45 border border-white/15 text-white/80 flex items-center gap-1">
+            {lecture.source_type === "url" ? (
+              <Link className="w-2.5 h-2.5 text-cyan-400" />
+            ) : (
+              <Film className="w-2.5 h-2.5 text-slate-300" />
+            )}
+            <span className="uppercase">{lecture.source_type}</span>
+          </span>
+        </div>
+
+        {/* Кнопки действий: Избранное (звезда) и Удаление */}
+        <div className="flex items-center gap-1 shrink-0">
+          <Tooltip content={isFav ? "Удалить из избранного" : "Добавить в избранное"} position="top">
+            <button
+              type="button"
+              onClick={onFavoriteClick}
+              className={`w-7 h-7 rounded-lg backdrop-blur-md flex items-center justify-center transition-all cursor-pointer border ${
+                isFav
+                  ? "bg-amber-500/30 border-amber-400/70 text-amber-300 shadow-sm"
+                  : "bg-black/45 hover:bg-black/70 border-white/20 text-white/80 hover:text-amber-400"
+              }`}
+            >
+              <Star
+                className={`w-3.5 h-3.5 transition-transform ${
+                  isFav ? "fill-amber-400 scale-110" : ""
+                }`}
+              />
+            </button>
+          </Tooltip>
+
+          <Tooltip content="Удалить лекцию" position="top">
+            <button
+              type="button"
+              onClick={onDeleteClick}
+              className="w-7 h-7 rounded-lg backdrop-blur-md bg-black/45 hover:bg-red-600/80 border border-white/20 text-white/80 hover:text-white transition-colors flex items-center justify-center cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
+        </div>
+      </div>
+
+      {/* Центральная кнопка Play при ховере */}
+      {isReady && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="w-11 h-11 rounded-full backdrop-blur-md bg-white/25 dark:bg-white/20 border border-white/40 text-white flex items-center justify-center shadow-2xl scale-90 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-300">
+            <Play className="w-4.5 h-4.5 fill-current ml-0.5" />
+          </div>
+        </div>
+      )}
+
+      {/* Правый нижний угол: длительность видео */}
+      {lecture.duration > 0 && (
+        <div className="absolute bottom-2.5 right-2.5 z-10 pointer-events-none">
+          <span className="px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium backdrop-blur-md bg-black/75 text-white/95 border border-white/15 shadow-sm flex items-center gap-1">
+            <Clock className="w-3 h-3 text-cyan-400" />
+            <span>{formatTimecode(lecture.duration)}</span>
+          </span>
+        </div>
+      )}
+
+      {/* Линия прогресса просмотра по нижнему краю превью */}
+      {hasProgress && (
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50 z-10 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export const DashboardView: React.FC<DashboardViewProps> = ({
   lectures,
   categories,
@@ -366,35 +523,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   onClick={() => onSelectLecture(hit.lecture_id, hit.start_time)}
                   onMouseEnter={handleSpotlightMouseMove}
                   onMouseMove={handleSpotlightMouseMove}
-                  className="p-4 rounded-2xl liquid-glass-card transition-all cursor-pointer shadow-lg group relative"
+                  className="p-3.5 sm:p-4 rounded-2xl liquid-glass-card transition-all cursor-pointer shadow-lg group relative"
                 >
                   {/* Интерактивный стеклянный блик за курсором */}
                   <div className="liquid-card-spotlight pointer-events-none" aria-hidden="true" />
 
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2 truncate">
-                        <Film className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 shrink-0" />
-                        <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                          {hit.lecture_title}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/20">
-                          {hit.score}% по смыслу
-                        </span>
-
-                        <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold liquid-glass-subtle text-slate-800 dark:text-white flex items-center gap-1 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                          <Play className="w-2.5 h-2.5 fill-current" />
-                          [{formatTimecode(hit.start_time)}]
-                        </span>
-                      </div>
+                  <div className="relative z-10 flex items-start gap-3.5">
+                    {/* Миниатюра кадра видео */}
+                    <div className="relative w-24 sm:w-28 aspect-video rounded-xl overflow-hidden shrink-0 bg-slate-900/80 border border-slate-200/50 dark:border-white/10 hidden xs:block">
+                      <img
+                        src={api.getThumbnailUrl(hit.lecture_id)}
+                        alt=""
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none"
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+                      <span className="absolute bottom-1 right-1 text-[9px] font-mono font-medium text-white/90 bg-black/75 px-1 py-0.5 rounded backdrop-blur-sm border border-white/10">
+                        {formatTimecode(hit.start_time)}
+                      </span>
                     </div>
 
-                    <p className="text-xs text-slate-600 dark:text-zinc-300 line-clamp-2 leading-relaxed">
-                      «{hit.text}»
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-3 mb-1.5">
+                        <div className="flex items-center gap-2 truncate">
+                          <Film className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 shrink-0" />
+                          <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                            {hit.lecture_title}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/20">
+                            {hit.score}% по смыслу
+                          </span>
+
+                          <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold liquid-glass-subtle text-slate-800 dark:text-white flex items-center gap-1 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                            <Play className="w-2.5 h-2.5 fill-current" />
+                            [{formatTimecode(hit.start_time)}]
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-600 dark:text-zinc-300 line-clamp-2 leading-relaxed">
+                        «{hit.text}»
+                      </p>
+                    </div>
                   </div>
                 </motion.div>
               ))}
@@ -930,7 +1106,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     }}
                     onMouseEnter={handleSpotlightMouseMove}
                     onMouseMove={handleSpotlightMouseMove}
-                    className={`relative flex flex-col justify-between p-5 rounded-3xl liquid-glass-card shadow-liquid-card-light dark:shadow-liquid-card transition-all ${
+                    className={`relative flex flex-col justify-between p-4 sm:p-5 rounded-3xl liquid-glass-card shadow-liquid-card-light dark:shadow-liquid-card transition-all ${
                       isReady ? "cursor-pointer group" : "cursor-default"
                     }`}
                   >
@@ -939,145 +1115,64 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                     {/* Верхняя секция карточки */}
                     <div className="relative z-10">
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className="w-7 h-7 rounded-lg liquid-glass-subtle flex items-center justify-center text-slate-600 dark:text-zinc-300 shrink-0">
-                            {lecture.source_type === "url" ? (
-                              <Link className="w-3.5 h-3.5 text-cyan-500" />
-                            ) : (
-                              <Film className="w-3.5 h-3.5" />
-                            )}
-                          </div>
-
-                          {/* Категория лекции (кнопка смены категории) */}
-                          {lecture.category ? (
-                            <Tooltip content="Нажмите, чтобы изменить категорию" position="top">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (!currentUser) {
-                                    onOpenAuth("Авторизуйтесь, чтобы менять категории лекций")
-                                    return
-                                  }
-                                  setLectureToAssignCategory(lecture)
-                                }}
-                                className="px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1 border backdrop-blur-md hover:brightness-110 transition-all cursor-pointer shadow-sm"
-                                style={{
-                                  backgroundColor: `${getCategoryHex(lecture.category.color)}20`,
-                                  color: getCategoryHex(lecture.category.color),
-                                  borderColor: `${getCategoryHex(lecture.category.color)}40`,
-                                }}
-                              >
-                                <Tag className="w-2.5 h-2.5" />
-                                <span>{lecture.category.name}</span>
-                                <ChevronDown className="w-2.5 h-2.5 opacity-60 ml-0.5" />
-                              </button>
-                            </Tooltip>
-                          ) : (
-                            <Tooltip content="Указать категорию для этой лекции" position="top">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (!currentUser) {
-                                    onOpenAuth("Авторизуйтесь, чтобы указать категорию лекции")
-                                    return
-                                  }
-                                  setLectureToAssignCategory(lecture)
-                                }}
-                                className="px-2 py-0.5 rounded-md text-[10px] font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white liquid-glass-subtle hover:bg-white/70 dark:hover:bg-white/[0.08] border-dashed border-slate-300 dark:border-white/[0.12] flex items-center gap-1 transition-all cursor-pointer"
-                              >
-                                <Tag className="w-2.5 h-2.5 text-slate-400" />
-                                <span>+ Категория</span>
-                              </button>
-                            </Tooltip>
-                          )}
-                        </div>
-
-                        {/* Кнопки действий: Избранное (звезда) и Удаление */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Tooltip content={isFav ? "Удалить из избранного" : "Добавить в избранное"} position="top">
-                            <button
-                              type="button"
-                              onClick={(e) => handleFavoriteClick(e, lecture.id)}
-                              className={`w-7 h-7 rounded-lg liquid-glass-subtle flex items-center justify-center transition-all cursor-pointer ${
-                                isFav
-                                  ? "text-amber-500 dark:text-amber-400 bg-amber-500/15 border-amber-500/30"
-                                  : "text-slate-400 dark:text-zinc-500 hover:text-amber-500 hover:bg-white/70 dark:hover:bg-white/[0.08]"
-                              }`}
-                            >
-                              <Star
-                                className={`w-3.5 h-3.5 transition-transform ${
-                                  isFav ? "fill-amber-500 dark:fill-amber-400 scale-110" : ""
-                                }`}
-                              />
-                            </button>
-                          </Tooltip>
-
-                          <Tooltip content="Удалить лекцию" position="top">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setLectureToDelete(lecture)
-                              }}
-                              className="w-7 h-7 rounded-lg liquid-glass-subtle text-slate-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center justify-center cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </Tooltip>
-                        </div>
-                      </div>
+                      {/* Фото-превью видео с плашками категории, длительности и кнопками действий */}
+                      <LectureCardThumbnail
+                        lecture={lecture}
+                        isReady={isReady}
+                        hasProgress={hasProgress}
+                        progressPercent={progressPercent}
+                        isFav={isFav}
+                        onFavoriteClick={(e) => handleFavoriteClick(e, lecture.id)}
+                        onDeleteClick={(e) => {
+                          e.stopPropagation()
+                          setLectureToDelete(lecture)
+                        }}
+                        onAssignCategoryClick={(e) => {
+                          e.stopPropagation()
+                          if (!currentUser) {
+                            onOpenAuth("Авторизуйтесь, чтобы менять категории лекций")
+                            return
+                          }
+                          setLectureToAssignCategory(lecture)
+                        }}
+                      />
 
                       <h3 className="text-base font-semibold text-slate-900 dark:text-white tracking-tight line-clamp-2 mb-2 group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors">
                         {lecture.title}
                       </h3>
 
-                      {/* Индикатор прогресса просмотра */}
+                      {/* Текстовый индикатор прогресса просмотра */}
                       {hasProgress && (
-                        <div className="mt-2.5 mb-1 space-y-1.5 p-2 rounded-xl liquid-glass-subtle border border-cyan-500/25">
-                          <div className="flex items-center justify-between text-[10px] font-mono">
-                            <span className="flex items-center gap-1 text-cyan-600 dark:text-cyan-400 font-semibold">
-                              <Play className="w-2.5 h-2.5 fill-current" />
-                              Просмотрено {progressPercent}%
-                            </span>
-                            <span className="text-slate-500 dark:text-zinc-400 font-medium">
-                              {formatTimecode(progressSec)} / {formatTimecode(lecture.duration)}
-                            </span>
-                          </div>
-                          <div className="h-1 w-full bg-slate-200/80 dark:bg-white/[0.08] rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 rounded-full transition-all"
-                              style={{ width: `${progressPercent}%` }}
-                            />
-                          </div>
+                        <div className="mt-2 mb-1 p-2 rounded-xl liquid-glass-subtle border border-cyan-500/25 flex items-center justify-between text-[10px] font-mono">
+                          <span className="flex items-center gap-1 text-cyan-600 dark:text-cyan-400 font-semibold">
+                            <Play className="w-2.5 h-2.5 fill-current" />
+                            Просмотрено {progressPercent}%
+                          </span>
+                          <span className="text-slate-500 dark:text-zinc-400 font-medium">
+                            {formatTimecode(progressSec)} / {formatTimecode(lecture.duration)}
+                          </span>
                         </div>
                       )}
                     </div>
 
                     {/* Нижняя секция: статус или метрики */}
-                    <div className="relative z-10 mt-4 pt-3 border-t border-slate-200/60 dark:border-white/[0.06]">
+                    <div className="relative z-10 mt-3 pt-3 border-t border-slate-200/60 dark:border-white/[0.06]">
                       {isReady ? (
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400">
-                            <div className="flex items-center gap-1.5 font-mono liquid-glass-subtle px-2 py-0.5 rounded-md">
-                              <Clock className="w-3.5 h-3.5 text-cyan-500" />
-                              <span>{formatTimecode(lecture.duration)}</span>
-                            </div>
-                            <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 liquid-glass-subtle px-2 py-0.5 rounded-md border border-emerald-500/25">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
+                            <span className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                              {formatDate(lecture.created_at)}
+                            </span>
+                            <div className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 liquid-glass-subtle px-2 py-0.5 rounded-md border border-emerald-500/25">
                               <span>Готово к изучению</span>
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-slate-400" />
-                              {formatDate(lecture.created_at)}
-                            </span>
-                            <span className="flex items-center gap-0.5 text-cyan-600 dark:text-cyan-400 font-medium group-hover:translate-x-1 transition-transform">
+                          <div className="flex items-center justify-end text-xs text-cyan-600 dark:text-cyan-400 font-medium group-hover:translate-x-1 transition-transform">
+                            <span className="flex items-center gap-0.5">
                               Открыть
-                              <ChevronRight className="w-3 h-3" />
+                              <ChevronRight className="w-3.5 h-3.5" />
                             </span>
                           </div>
                         </div>

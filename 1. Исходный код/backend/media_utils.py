@@ -13,9 +13,11 @@ BASE_DIR: Path = Path(__file__).resolve().parent
 STORAGE_DIR: Path = BASE_DIR / "storage"
 VIDEOS_DIR: Path = STORAGE_DIR / "videos"
 AUDIO_DIR: Path = STORAGE_DIR / "audio"
+THUMBNAILS_DIR: Path = STORAGE_DIR / "thumbnails"
 
 VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def resolve_media_path(
@@ -243,3 +245,96 @@ def get_video_duration(video_path: Union[str, Path]) -> float:
         return hours * 3600.0 + minutes * 60.0 + seconds
 
     return 0.0
+
+
+def generate_thumbnail(
+    video_path: Union[str, Path],
+    thumbnail_id: Optional[str] = None,
+    duration: Optional[float] = None,
+    time_offset: Optional[float] = None,
+) -> Optional[Path]:
+    video_file = resolve_media_path(video_path, VIDEOS_DIR)
+    if not video_file or not video_file.is_file():
+        return None
+
+    if not thumbnail_id:
+        thumbnail_id = video_file.stem
+
+    output_thumbnail = THUMBNAILS_DIR / f"{thumbnail_id}.jpg"
+    try:
+        ffmpeg_bin = get_ffmpeg_path()
+    except FileNotFoundError:
+        return None
+
+    if time_offset is None:
+        if duration is None or duration <= 0:
+            try:
+                duration = get_video_duration(video_file)
+            except Exception:
+                duration = 0.0
+
+        if duration and duration > 10.0:
+            time_offset = min(5.0, duration * 0.1)
+        elif duration and duration > 2.0:
+            time_offset = 1.0
+        else:
+            time_offset = 0.0
+
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-ss",
+        f"{time_offset:.2f}",
+        "-i",
+        str(video_file),
+        "-vframes",
+        "1",
+        "-q:v",
+        "2",
+        "-vf",
+        "scale=640:-1",
+        str(output_thumbnail),
+    ]
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    if (
+        result.returncode == 0
+        and output_thumbnail.is_file()
+        and output_thumbnail.stat().st_size > 0
+    ):
+        return output_thumbnail
+
+    fallback_cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-ss",
+        "00:00:00",
+        "-i",
+        str(video_file),
+        "-vframes",
+        "1",
+        "-q:v",
+        "2",
+        "-vf",
+        "scale=640:-1",
+        str(output_thumbnail),
+    ]
+    fb_res = subprocess.run(
+        fallback_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if (
+        fb_res.returncode == 0
+        and output_thumbnail.is_file()
+        and output_thumbnail.stat().st_size > 0
+    ):
+        return output_thumbnail
+
+    return None
+

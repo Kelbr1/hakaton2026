@@ -418,6 +418,10 @@ def generate_lecture_artifacts(
                     })
 
                 if summary_md and chapters:
+                    if not summary_md.startswith("# Аналитический конспект:"):
+                        first_line_end = summary_md.find("\n")
+                        rest = summary_md[first_line_end:].strip() if first_line_end != -1 else ""
+                        summary_md = f"# Аналитический конспект: {lecture_title}\n\n{rest}"
                     return summary_md, chapters, glossary
     except Exception:
         pass
@@ -498,3 +502,299 @@ def answer_lecture_question(
     )
 
     return {"answer": fallback_answer, "sources": sources}
+
+
+_quiz_cache: Dict[int, Dict[str, Any]] = {}
+
+
+def _algorithmic_fallback_quiz(
+    lecture_id: int,
+    lecture_title: str,
+    chapters: List[Any],
+    glossary: List[Any],
+    segments: List[TranscriptSegment],
+) -> Dict[str, Any]:
+    import random
+
+    questions: List[Dict[str, Any]] = []
+    q_id = 1
+
+    # 1. Вопросы по терминам глоссария лекции
+    if glossary:
+        sample_terms = [g for g in glossary if getattr(g, "term", None) and getattr(g, "definition", None)][:4]
+        all_defs = [getattr(g, "definition", "") for g in glossary if getattr(g, "definition", None)]
+
+        for g in sample_terms:
+            term_name = getattr(g, "term", "")
+            definition = getattr(g, "definition", "")
+            timecode = getattr(g, "first_timecode", 0.0)
+
+            other_defs = [d for d in all_defs if d != definition]
+            distractors = other_defs[:3]
+            placeholders = [
+                "Метод оптимизации градиентного спуска без использования матриц весов.",
+                "Вспомогательный алгоритм для сжатия исходных видео- и аудиопотоков.",
+                "Параметр скорости обучения нейросети, уменьшающийся со временем.",
+                "Математическая операция нормализации скрытого состояния сети.",
+            ]
+            for p in placeholders:
+                if len(distractors) >= 3:
+                    break
+                if p not in distractors and p != definition:
+                    distractors.append(p)
+
+            raw_options = [
+                {"text": definition, "is_correct": True},
+                {"text": distractors[0] if len(distractors) > 0 else placeholders[0], "is_correct": False},
+                {"text": distractors[1] if len(distractors) > 1 else placeholders[1], "is_correct": False},
+                {"text": distractors[2] if len(distractors) > 2 else placeholders[2], "is_correct": False},
+            ]
+            random.seed(lecture_id + q_id * 13)
+            random.shuffle(raw_options)
+
+            options = []
+            correct_id = "A"
+            for idx, opt in enumerate(raw_options):
+                opt_id = ["A", "B", "C", "D"][idx]
+                options.append({"id": opt_id, "text": opt["text"]})
+                if opt["is_correct"]:
+                    correct_id = opt_id
+
+            tc_str = _format_timecode(timecode)
+            questions.append({
+                "id": q_id,
+                "question": f"Что означает понятие «{term_name}» согласно материалам лекции?",
+                "options": options,
+                "correct_option_id": correct_id,
+                "explanation": f"В лекции на отметке [{tc_str}] лектор формулирует: «{definition}».",
+                "timecode": round(timecode, 1),
+            })
+            q_id += 1
+
+    # 2. Вопросы по разделам и ключевым главам
+    if chapters and len(questions) < 5:
+        for ch in chapters[:3]:
+            ch_title = getattr(ch, "title", "")
+            summary = getattr(ch, "summary", "")
+            timecode = getattr(ch, "start_time", 0.0)
+            if not ch_title or not summary or len(summary) < 10:
+                continue
+
+            other_summaries = [getattr(c, "summary", "") for c in chapters if getattr(c, "summary", "") != summary]
+            distractors = [s for s in other_summaries if s][:3]
+            fallbacks = [
+                "Исторический обзор развития вычислительной техники 1980-х годов.",
+                "Сравнение стоимости различных аппаратных ускорителей и серверов.",
+                "Инструкция по установке сторонних драйверов операционной системы.",
+            ]
+            for f in fallbacks:
+                if len(distractors) >= 3:
+                    break
+                if f not in distractors:
+                    distractors.append(f)
+
+            raw_options = [
+                {"text": summary, "is_correct": True},
+                {"text": distractors[0] if len(distractors) > 0 else fallbacks[0], "is_correct": False},
+                {"text": distractors[1] if len(distractors) > 1 else fallbacks[1], "is_correct": False},
+                {"text": distractors[2] if len(distractors) > 2 else fallbacks[2], "is_correct": False},
+            ]
+            random.seed(lecture_id + q_id * 19)
+            random.shuffle(raw_options)
+
+            options = []
+            correct_id = "A"
+            for idx, opt in enumerate(raw_options):
+                opt_id = ["A", "B", "C", "D"][idx]
+                options.append({"id": opt_id, "text": opt["text"]})
+                if opt["is_correct"]:
+                    correct_id = opt_id
+
+            clean_ch_title = re.sub(r"^\d+\.\s*", "", ch_title)
+            tc_str = _format_timecode(timecode)
+            questions.append({
+                "id": q_id,
+                "question": f"Какая ключевая тема подробно раскрывается в разделе «{clean_ch_title}»?",
+                "options": options,
+                "correct_option_id": correct_id,
+                "explanation": f"В разделе «{clean_ch_title}» (начиная с [{tc_str}]) объясняется: «{summary}».",
+                "timecode": round(timecode, 1),
+            })
+            q_id += 1
+            if len(questions) >= 5:
+                break
+
+    # 3. Дополнительный вопрос по содержанию лекции, если вопросов мало
+    if len(questions) < 3 and segments:
+        mid_idx = len(segments) // 2
+        mid_seg = segments[mid_idx]
+        tc_str = _format_timecode(mid_seg.start_time)
+        questions.append({
+            "id": q_id,
+            "question": f"О чем рассказывается в центральной части лекции «{lecture_title}»?",
+            "options": [
+                {"id": "A", "text": f"Обсуждается практический аспект: «{mid_seg.text[:95]}...»"},
+                {"id": "B", "text": "Рассматриваются правила оформления академических отчетов."},
+                {"id": "C", "text": "Проводится демонстрация сторонних программных инструментов без теории."},
+                {"id": "D", "text": "Обсуждаются административные вопросы расписания сессии."},
+            ],
+            "correct_option_id": "A",
+            "explanation": f"На таймкоде [{tc_str}] лектор подробно излагает этот материал.",
+            "timecode": round(mid_seg.start_time, 1),
+        })
+
+    return {
+        "lecture_id": lecture_id,
+        "lecture_title": lecture_title,
+        "total_questions": len(questions),
+        "questions": questions,
+    }
+
+
+def generate_lecture_quiz(
+    lecture_id: int,
+    session: Session,
+    force_regenerate: bool = False,
+) -> Dict[str, Any]:
+    global _quiz_cache
+    if not force_regenerate and lecture_id in _quiz_cache:
+        return _quiz_cache[lecture_id]
+
+    from .models import Lecture
+
+    lecture = session.get(Lecture, lecture_id)
+    if not lecture:
+        return {"lecture_id": lecture_id, "questions": [], "total_questions": 0}
+
+    segments = list(lecture.segments)
+    chapters = list(lecture.chapters)
+    glossary = list(lecture.glossary_terms)
+
+    status = get_ollama_status()
+    if status["online"] and status["active_model"] and segments:
+        active_model = status["active_model"]
+
+        context_parts: List[str] = []
+        if chapters:
+            context_parts.append("Разделы лекции:")
+            for ch in chapters:
+                context_parts.append(f"- [{_format_timecode(ch.start_time)}] {ch.title}: {ch.summary}")
+
+        if glossary:
+            context_parts.append("\nГлоссарий терминов:")
+            for g in glossary:
+                context_parts.append(f"- [{_format_timecode(g.first_timecode)}] {g.term}: {g.definition}")
+
+        context_parts.append("\nФрагменты речи:")
+        step = max(1, len(segments) // 25)
+        for s in segments[::step][:30]:
+            context_parts.append(f"[{_format_timecode(s.start_time)}] {s.text}")
+
+        context_text = "\n".join(context_parts)
+
+        prompt = (
+            f"Ты опытный академический преподаватель. Составь интерактивный тест (квиз) "
+            f"из 4-5 вопросов для проверки знаний студента по видеолекции «{lecture.title}».\n\n"
+            f"Материалы лекции:\n{context_text}\n\n"
+            "Инструкции:\n"
+            "1. Составь от 3 до 5 качественных вопросов с 4 вариантами ответа (A, B, C, D).\n"
+            "2. Ровно один вариант ответа должен быть правильным.\n"
+            "3. Поле 'explanation' должно кратко и емко объяснять правильный ответ со ссылкой на лекцию.\n"
+            "4. Поле 'timecode' должно содержать точный таймкод (числом секунд, например 45.0 или 120.5), где в лекции об этом говорится.\n\n"
+            "Ответь СТРОГО в формате JSON:\n"
+            "{\n"
+            '  "questions": [\n'
+            '    {\n'
+            '      "id": 1,\n'
+            '      "question": "Текст вопроса?",\n'
+            '      "options": [\n'
+            '        {"id": "A", "text": "Вариант 1"},\n'
+            '        {"id": "B", "text": "Вариант 2"},\n'
+            '        {"id": "C", "text": "Вариант 3"},\n'
+            '        {"id": "D", "text": "Вариант 4"}\n'
+            '      ],\n'
+            '      "correct_option_id": "A",\n'
+            '      "explanation": "Объяснение, почему вариант правильный...",\n'
+            '      "timecode": 45.0\n'
+            '    }\n'
+            '  ]\n'
+            "}"
+        )
+
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.post(
+                    f"{OLLAMA_BASE_URL}/api/generate",
+                    json={
+                        "model": active_model,
+                        "prompt": prompt,
+                        "format": "json",
+                        "stream": False,
+                        "options": {"temperature": 0.3},
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    parsed = json.loads(data.get("response", "{}"))
+                    raw_questions = parsed.get("questions", [])
+                    if isinstance(raw_questions, list) and len(raw_questions) >= 2:
+                        validated_questions = []
+                        for idx, q in enumerate(raw_questions):
+                            if not isinstance(q, dict):
+                                continue
+                            q_text = str(q.get("question", "")).strip()
+                            raw_opts = q.get("options", [])
+                            if not q_text or len(raw_opts) < 2:
+                                continue
+
+                            opts = []
+                            for o_idx, opt in enumerate(raw_opts[:4]):
+                                if isinstance(opt, dict):
+                                    o_id = str(opt.get("id", ["A", "B", "C", "D"][o_idx])).upper()
+                                    o_text = str(opt.get("text", "")).strip()
+                                else:
+                                    o_id = ["A", "B", "C", "D"][o_idx]
+                                    o_text = str(opt).strip()
+                                opts.append({"id": o_id, "text": o_text})
+
+                            correct_id = str(q.get("correct_option_id", "A")).upper()
+                            if correct_id not in [o["id"] for o in opts]:
+                                correct_id = opts[0]["id"]
+
+                            raw_tc = q.get("timecode", 0.0)
+                            tc_sec = parse_timecode_to_seconds(raw_tc)
+                            if tc_sec <= 0 and segments:
+                                tc_sec = find_term_timecode(q_text, segments, fallback_time=0.0)
+
+                            validated_questions.append({
+                                "id": idx + 1,
+                                "question": q_text,
+                                "options": opts,
+                                "correct_option_id": correct_id,
+                                "explanation": str(q.get("explanation", "Правильный ответ подтверждается материалами лекции.")).strip(),
+                                "timecode": round(tc_sec, 1),
+                            })
+
+                        if validated_questions:
+                            res = {
+                                "lecture_id": lecture_id,
+                                "lecture_title": lecture.title,
+                                "total_questions": len(validated_questions),
+                                "questions": validated_questions,
+                            }
+                            _quiz_cache[lecture_id] = res
+                            return res
+        except Exception:
+            pass
+
+    # Фоллбэк: генерация теста на основе разделов и глоссария
+    res = _algorithmic_fallback_quiz(
+        lecture_id=lecture_id,
+        lecture_title=lecture.title,
+        chapters=chapters,
+        glossary=glossary,
+        segments=segments,
+    )
+    _quiz_cache[lecture_id] = res
+    return res
+

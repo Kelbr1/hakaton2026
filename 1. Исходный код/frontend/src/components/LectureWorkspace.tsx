@@ -26,6 +26,16 @@ import {
   Maximize2,
   Minimize2,
   Expand,
+  Award,
+  RotateCw,
+  CheckCircle2,
+  XCircle,
+  GraduationCap,
+  Sparkles,
+  StickyNote,
+  Trash2,
+  Pencil,
+  Plus,
 } from "lucide-react"
 import { api } from "../api/client"
 import { formatTimecode } from "../utils/format"
@@ -39,6 +49,8 @@ import type {
   SearchResultItem,
   User,
   Category,
+  LectureQuiz,
+  LectureNote,
 } from "../types"
 
 interface LectureWorkspaceProps {
@@ -54,8 +66,8 @@ interface LectureWorkspaceProps {
   onToggleFavorite?: (lectureId: number) => void
 }
 
-type LeftTab = "structure" | "summary" | "glossary"
-type RightTab = "transcript" | "search" | "chat"
+type LeftTab = "structure" | "summary" | "glossary" | "quiz"
+type RightTab = "transcript" | "notes" | "search" | "chat"
 
 interface ChatMessage {
   id: string
@@ -122,6 +134,136 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
   ])
   const [chatInput, setChatInput] = useState<string>("")
   const [chatLoading, setChatLoading] = useState<boolean>(false)
+
+  // Интерактивная проверка знаний (Квиз)
+  const [quiz, setQuiz] = useState<LectureQuiz | null>(null)
+  const [quizLoading, setQuizLoading] = useState<boolean>(false)
+  const [quizError, setQuizError] = useState<string | null>(null)
+  const [userAnswers, setUserAnswers] = useState<Record<number, string>>({})
+
+  const loadQuiz = useCallback(async (forceRegenerate: boolean = false) => {
+    try {
+      setQuizLoading(true)
+      setQuizError(null)
+      if (forceRegenerate) {
+        setUserAnswers({})
+      }
+      const data = await api.getLectureQuiz(lectureId, forceRegenerate)
+      setQuiz(data)
+    } catch (err) {
+      console.error("Failed to load quiz:", err)
+      setQuizError("Не удалось сформировать тест. Пожалуйста, повторите попытку.")
+    } finally {
+      setQuizLoading(false)
+    }
+  }, [lectureId])
+
+  useEffect(() => {
+    if (leftTab === "quiz" && !quiz && !quizLoading) {
+      loadQuiz(false)
+    }
+  }, [leftTab, quiz, quizLoading, loadQuiz])
+
+  // Заметки на таймкодах
+  const [notes, setNotes] = useState<LectureNote[]>([])
+  const [notesLoading, setNotesLoading] = useState<boolean>(false)
+  const [newNoteText, setNewNoteText] = useState<string>("")
+  const [newNoteTimecode, setNewNoteTimecode] = useState<number | null>(null)
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null)
+  const [editingNoteText, setEditingNoteText] = useState<string>("")
+  const [isSubmittingNote, setIsSubmittingNote] = useState<boolean>(false)
+  const noteInputRef = useRef<HTMLTextAreaElement>(null)
+
+  const loadNotes = useCallback(async () => {
+    try {
+      setNotesLoading(true)
+      const data = await api.getNotes(lectureId)
+      setNotes(data)
+    } catch (err) {
+      console.error("Failed to load notes:", err)
+    } finally {
+      setNotesLoading(false)
+    }
+  }, [lectureId])
+
+  useEffect(() => {
+    loadNotes()
+  }, [loadNotes])
+
+  const handleCreateNote = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    const trimmed = newNoteText.trim()
+    if (!trimmed || isSubmittingNote) return
+
+    const targetTimecode = newNoteTimecode !== null ? newNoteTimecode : Math.floor(currentTime)
+    setIsSubmittingNote(true)
+    try {
+      const created = await api.createNote(lectureId, targetTimecode, trimmed)
+      setNotes((prev) => [...prev, created].sort((a, b) => a.timecode - b.timecode))
+      setNewNoteText("")
+      setNewNoteTimecode(null)
+    } catch (err) {
+      console.error("Failed to create note:", err)
+    } finally {
+      setIsSubmittingNote(false)
+    }
+  }
+
+  const handleUpdateNote = async (noteId: number) => {
+    const trimmed = editingNoteText.trim()
+    if (!trimmed) return
+    try {
+      const updated = await api.updateNote(lectureId, noteId, trimmed)
+      setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)))
+      setEditingNoteId(null)
+      setEditingNoteText("")
+    } catch (err) {
+      console.error("Failed to update note:", err)
+    }
+  }
+
+  const handleDeleteNote = async (noteId: number) => {
+    try {
+      await api.deleteNote(lectureId, noteId)
+      setNotes((prev) => prev.filter((n) => n.id !== noteId))
+    } catch (err) {
+      console.error("Failed to delete note:", err)
+    }
+  }
+
+  const handleExportNotes = () => {
+    if (notes.length === 0) return
+    const lines = [
+      `# Заметки к лекции: ${lecture?.title || "Без названия"}`,
+      `Всего заметок: ${notes.length}`,
+      `Дата экспорта: ${new Date().toLocaleString("ru-RU")}`,
+      "",
+      "---",
+      "",
+      ...notes.map(
+        (n, i) =>
+          `### ${i + 1}. [${formatTimecode(n.timecode)}] (${new Date(
+            n.created_at
+          ).toLocaleDateString("ru-RU")})\n${n.text}\n`
+      ),
+    ]
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `notes_lecture_${lectureId}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const startAddNote = (timecode?: number) => {
+    setRightTab("notes")
+    const tc = timecode !== undefined ? timecode : Math.floor(currentTime)
+    setNewNoteTimecode(tc)
+    window.setTimeout(() => {
+      noteInputRef.current?.focus()
+    }, 80)
+  }
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const transcriptContainerRef = useRef<HTMLDivElement>(null)
@@ -611,6 +753,22 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
           <span className="px-2.5 py-1 rounded-xl liquid-glass-subtle text-emerald-600 dark:text-emerald-400 text-[11px] font-medium border border-emerald-500/25">
             Готово
           </span>
+
+          {/* Быстрый переход к тесту проверки знаний */}
+          <Tooltip content="Пройти интерактивный тест на понимание материала" position="bottom">
+            <button
+              type="button"
+              onClick={() => setLeftTab("quiz")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer shadow-sm ${
+                leftTab === "quiz"
+                  ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-liquid-btn border-cyan-400/40"
+                  : "liquid-btn-glass text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 border-cyan-500/30"
+              }`}
+            >
+              <Award className="w-3.5 h-3.5" />
+              <span>Тест по лекции</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -623,6 +781,7 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
             <video
               ref={videoRef}
               src={api.getStreamUrl(lecture.id)}
+              poster={api.getThumbnailUrl(lecture.id)}
               controls
               playsInline
               onKeyDown={(e) => {
@@ -755,6 +914,18 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
                 </button>
               </Tooltip>
 
+              {/* Добавить заметку на текущем таймкоде */}
+              <Tooltip content="Добавить заметку на текущем таймкоде" position="top">
+                <button
+                  type="button"
+                  onClick={() => startAddNote(Math.floor(currentTime))}
+                  className="px-2.5 py-1 rounded-xl liquid-btn-primary text-white flex items-center gap-1.5 transition-all cursor-pointer font-medium text-xs shadow-liquid-btn"
+                >
+                  <StickyNote className="w-3.5 h-3.5" />
+                  <span>+ Заметка [{formatTimecode(currentTime)}]</span>
+                </button>
+              </Tooltip>
+
               {/* На весь экран (Fullscreen) */}
               <Tooltip content="Развернуть во весь экран" position="top">
                 <button
@@ -767,6 +938,42 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
               </Tooltip>
             </div>
           </div>
+
+          {/* Быстрые закладки-заметки на таймлайне лекции */}
+          {notes.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 no-scrollbar text-xs">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 shrink-0 flex items-center gap-1.5 pl-1">
+                <StickyNote className="w-3.5 h-3.5 text-cyan-500" />
+                Заметки ({notes.length}):
+              </span>
+              <div className="flex items-center gap-1.5 flex-nowrap">
+                {notes.map((note) => {
+                  const isCurrent = Math.abs(currentTime - note.timecode) < 5
+                  return (
+                    <button
+                      key={note.id}
+                      type="button"
+                      onClick={() => {
+                        seekTo(note.timecode)
+                        setRightTab("notes")
+                      }}
+                      className={`shrink-0 px-2.5 py-1 rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer max-w-[220px] ${
+                        isCurrent
+                          ? "bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/50 shadow-sm"
+                          : "liquid-glass-subtle text-slate-700 dark:text-zinc-300 hover:bg-white/70 dark:hover:bg-white/10 border border-white/40 dark:border-white/[0.06]"
+                      }`}
+                      title={note.text}
+                    >
+                      <span className="font-mono text-cyan-600 dark:text-cyan-400 font-bold text-[10px]">
+                        [{formatTimecode(note.timecode)}]
+                      </span>
+                      <span className="truncate text-[11px]">{note.text}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Баннер возобновления просмотра с сохранённой позиции */}
           <AnimatePresence>
@@ -827,19 +1034,22 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
               <div
                 className="absolute top-1 bottom-1 left-1 rounded-lg liquid-tab-indicator pointer-events-none"
                 style={{
-                  width: "calc((100% - 8px) / 3)",
+                  width: "calc((100% - 8px) / 4)",
                   transform:
                     leftTab === "structure"
                       ? "translateX(0%)"
                       : leftTab === "summary"
                       ? "translateX(100%)"
-                      : "translateX(200%)",
+                      : leftTab === "glossary"
+                      ? "translateX(200%)"
+                      : "translateX(300%)",
                 }}
               />
               {[
-                { id: "structure", label: "Структура лекции", icon: BookOpen },
-                { id: "summary", label: "Автоконспект", icon: FileText },
-                { id: "glossary", label: "Ключевые термины", icon: Bookmark },
+                { id: "structure", label: "Структура", icon: BookOpen },
+                { id: "summary", label: "Конспект", icon: FileText },
+                { id: "glossary", label: "Термины", icon: Bookmark },
+                { id: "quiz", label: "Квиз / Тест", icon: Award },
               ].map((tab) => {
                 const Icon = tab.icon
                 const isActive = leftTab === tab.id
@@ -1030,6 +1240,253 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
                 )}
               </div>
             )}
+
+            {/* Вкладка 4: Интерактивная проверка знаний (Квиз) */}
+            {leftTab === "quiz" && (
+              <div className="space-y-5">
+                {quizLoading ? (
+                  <div className="py-16 flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-8 h-8 text-cyan-500 animate-spin" />
+                    <span className="text-xs text-slate-500 dark:text-zinc-400 font-medium">
+                      Локальный ИИ формирует интерактивный тест по лекции...
+                    </span>
+                  </div>
+                ) : quizError ? (
+                  <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-300 space-y-2 text-center">
+                    <p>{quizError}</p>
+                    <button
+                      type="button"
+                      onClick={() => loadQuiz(true)}
+                      className="px-3.5 py-1.5 rounded-xl liquid-btn-glass text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>Попробовать снова</span>
+                    </button>
+                  </div>
+                ) : quiz && quiz.questions.length > 0 ? (
+                  <div className="space-y-6">
+                    {/* Заголовок квиза и панель действий */}
+                    <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b border-slate-200/60 dark:border-white/[0.06]">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                          <Award className="w-4 h-4 text-cyan-500" />
+                          <span>Проверка знаний по лекции</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                          Ответьте на вопросы и закрепите ключевые концепции материала
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {Object.keys(userAnswers).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setUserAnswers({})}
+                            className="px-2.5 py-1.5 rounded-xl liquid-btn-glass text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
+                          >
+                            Сбросить ответы
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => loadQuiz(true)}
+                          className="px-3 py-1.5 rounded-xl liquid-btn-glass text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <RotateCw className="w-3 h-3" />
+                          <span>Новые вопросы</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Баннер результатов, если отвечены все вопросы */}
+                    {Object.keys(userAnswers).length === quiz.questions.length && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className={`p-4 rounded-2xl border text-xs shadow-lg space-y-1.5 ${
+                          quiz.questions.filter((q) => userAnswers[q.id] === q.correct_option_id).length === quiz.questions.length
+                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-200"
+                            : "bg-blue-500/10 border-blue-500/30 text-slate-900 dark:text-zinc-100"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-semibold">
+                          <span className="flex items-center gap-1.5 text-sm">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            Тест завершен! Результат:{" "}
+                            {quiz.questions.filter((q) => userAnswers[q.id] === q.correct_option_id).length} из{" "}
+                            {quiz.questions.length} (
+                            {Math.round(
+                              (quiz.questions.filter((q) => userAnswers[q.id] === q.correct_option_id).length /
+                                quiz.questions.length) *
+                                100
+                            )}
+                            %)
+                          </span>
+                        </div>
+                        <p className="text-[11px] opacity-80">
+                          {quiz.questions.filter((q) => userAnswers[q.id] === q.correct_option_id).length === quiz.questions.length
+                            ? "Поздравляем! Вы отлично усвоили все ключевые концепции этой лекции."
+                            : "Изучите пояснения ниже и пересмотрите фрагменты видео для закрепления материала."}
+                        </p>
+                      </motion.div>
+                    )}
+
+                    {/* Список вопросов */}
+                    <div className="space-y-4">
+                      {quiz.questions.map((q, idx) => {
+                        const userAnswer = userAnswers[q.id]
+                        const isAnswered = userAnswer !== undefined
+                        const isCorrect = isAnswered && userAnswer === q.correct_option_id
+
+                        return (
+                          <motion.div
+                            key={q.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: idx * 0.05 }}
+                            className={`p-4 sm:p-5 rounded-2xl liquid-glass-subtle border transition-all ${
+                              isAnswered
+                                ? isCorrect
+                                  ? "border-emerald-500/40 bg-emerald-500/[0.04]"
+                                  : "border-rose-500/40 bg-rose-500/[0.04]"
+                                : "border-white/50 dark:border-white/[0.08]"
+                            }`}
+                          >
+                            {/* Шапка вопроса: Номер и индикатор */}
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <span className="text-[10px] font-mono uppercase font-bold text-slate-400 dark:text-zinc-500 tracking-wider">
+                                Вопрос {idx + 1} из {quiz.questions.length}
+                              </span>
+
+                              {isAnswered && (
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-medium font-mono flex items-center gap-1 ${
+                                    isCorrect
+                                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                                      : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                                  }`}
+                                >
+                                  {isCorrect ? (
+                                    <>
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      <span>Верно</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <XCircle className="w-3 h-3" />
+                                      <span>Неверно</span>
+                                    </>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Текст вопроса */}
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3.5 leading-snug">
+                              {q.question}
+                            </h4>
+
+                            {/* 4 Варианта ответов */}
+                            <div className="space-y-2">
+                              {q.options.map((opt) => {
+                                const isSelected = userAnswer === opt.id
+                                const isOptionCorrect = opt.id === q.correct_option_id
+
+                                let optStyle = "liquid-glass hover:bg-white/70 dark:hover:bg-white/[0.08] text-slate-700 dark:text-zinc-300 border-slate-200/60 dark:border-white/[0.08]"
+
+                                if (isAnswered) {
+                                  if (isOptionCorrect) {
+                                    optStyle = "bg-emerald-500/15 border-emerald-500 text-emerald-800 dark:text-emerald-200 font-medium shadow-sm"
+                                  } else if (isSelected && !isCorrect) {
+                                    optStyle = "bg-rose-500/15 border-rose-500 text-rose-800 dark:text-rose-200 font-medium shadow-sm"
+                                  } else {
+                                    optStyle = "opacity-45 liquid-glass text-slate-500 dark:text-zinc-500 border-transparent"
+                                  }
+                                }
+
+                                return (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    disabled={isAnswered}
+                                    onClick={() => {
+                                      setUserAnswers((prev) => ({ ...prev, [q.id]: opt.id }))
+                                    }}
+                                    className={`w-full p-3 rounded-xl border text-xs text-left flex items-start gap-3 transition-all cursor-pointer ${optStyle}`}
+                                  >
+                                    <span
+                                      className={`w-5 h-5 rounded-md flex items-center justify-center font-mono font-bold text-[11px] shrink-0 mt-0.5 ${
+                                        isAnswered
+                                          ? isOptionCorrect
+                                            ? "bg-emerald-500 text-white"
+                                            : isSelected
+                                            ? "bg-rose-500 text-white"
+                                            : "liquid-glass-subtle text-slate-400"
+                                          : "liquid-glass-subtle text-slate-600 dark:text-zinc-400"
+                                      }`}
+                                    >
+                                      {opt.id}
+                                    </span>
+
+                                    <span className="flex-1 leading-relaxed">{opt.text}</span>
+
+                                    {isAnswered && isOptionCorrect && (
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                                    )}
+                                    {isAnswered && isSelected && !isCorrect && (
+                                      <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+
+                            {/* Блок объяснения и переход к таймкоду в лекции */}
+                            {isAnswered && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                className="mt-3 pt-3 border-t border-slate-200/60 dark:border-white/[0.06] space-y-2 text-xs"
+                              >
+                                <p className="text-slate-600 dark:text-zinc-300 leading-relaxed text-[11px]">
+                                  <span className="font-semibold text-slate-900 dark:text-white">Пояснение: </span>
+                                  {q.explanation}
+                                </p>
+
+                                <div className="flex items-center justify-between pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => seekTo(q.timecode)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl liquid-btn-primary text-white text-[11px] font-semibold shadow-liquid-btn cursor-pointer transition-all"
+                                  >
+                                    <Play className="w-3 h-3 fill-current" />
+                                    <span>Смотреть фрагмент в лекции [{formatTimecode(q.timecode)}]</span>
+                                  </button>
+                                </div>
+                              </motion.div>
+                            )}
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-xs text-slate-500 dark:text-zinc-400 space-y-3">
+                    <GraduationCap className="w-8 h-8 text-cyan-500 mx-auto opacity-75" />
+                    <p>Интерактивный тест для этой лекции готов к генерации.</p>
+                    <button
+                      type="button"
+                      onClick={() => loadQuiz(true)}
+                      className="px-4 py-2 rounded-xl liquid-btn-primary text-white text-xs font-semibold shadow-liquid-btn cursor-pointer inline-flex items-center gap-2"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Сформировать вопросы</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1042,17 +1499,20 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
               <div
                 className="absolute top-1 bottom-1 left-1 rounded-lg liquid-tab-indicator pointer-events-none"
                 style={{
-                  width: "calc((100% - 8px) / 3)",
+                  width: "calc((100% - 8px) / 4)",
                   transform:
                     rightTab === "transcript"
                       ? "translateX(0%)"
-                      : rightTab === "search"
+                      : rightTab === "notes"
                       ? "translateX(100%)"
-                      : "translateX(200%)",
+                      : rightTab === "search"
+                      ? "translateX(200%)"
+                      : "translateX(300%)",
                 }}
               />
               {[
                 { id: "transcript", label: "Транскрипт", icon: Volume2 },
+                { id: "notes", label: "Заметки", icon: StickyNote, count: notes.length },
                 { id: "search", label: "Поиск", icon: Search },
                 { id: "chat", label: "Вопрос-ответ", icon: MessageSquare },
               ].map((tab) => {
@@ -1070,6 +1530,17 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
                   >
                     <Icon className="w-3.5 h-3.5" />
                     <span>{tab.label}</span>
+                    {tab.count !== undefined && tab.count > 0 && (
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold leading-tight ${
+                          isActive
+                            ? "bg-cyan-500 text-white"
+                            : "bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-zinc-300"
+                        }`}
+                      >
+                        {tab.count}
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -1155,7 +1626,226 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
             </div>
           )}
 
-          {/* Содержимое Режима 2: Поиск по смыслу внутри лекции */}
+          {/* Содержимое Режима 2: Заметки на таймкодах */}
+          {rightTab === "notes" && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Верхняя плашка управления заметками: Заголовок + Экспорт в MD */}
+              <div className="px-4 py-2.5 border-b border-slate-200/60 dark:border-white/[0.04] flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-slate-700 dark:text-zinc-200 font-semibold">
+                  <StickyNote className="w-4 h-4 text-cyan-500" />
+                  <span>Заметки ({notes.length})</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Tooltip content="Экспортировать все заметки с таймкодами в Markdown (.md)" position="left">
+                    <button
+                      type="button"
+                      disabled={notes.length === 0}
+                      onClick={handleExportNotes}
+                      className="px-2.5 py-1 rounded-xl liquid-btn-glass text-[11px] font-medium text-slate-600 dark:text-zinc-300 disabled:opacity-40 flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Экспорт .md</span>
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
+
+              {/* Форма быстрого добавления заметки */}
+              <div className="p-3.5 border-b border-slate-200/60 dark:border-white/[0.04] liquid-glass-subtle space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-zinc-300">
+                    <span>Таймкод:</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewNoteTimecode(Math.floor(currentTime))}
+                      className="px-2 py-0.5 rounded-lg liquid-btn-primary text-white text-[11px] font-mono font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+                      title="Кликните, чтобы синхронизировать с текущей секундой видео"
+                    >
+                      <Play className="w-2.5 h-2.5 fill-current" />
+                      [{formatTimecode(newNoteTimecode !== null ? newNoteTimecode : Math.floor(currentTime))}]
+                    </button>
+                    {newNoteTimecode !== null && newNoteTimecode !== Math.floor(currentTime) && (
+                      <button
+                        type="button"
+                        onClick={() => setNewNoteTimecode(Math.floor(currentTime))}
+                        className="text-[10px] text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+                      >
+                        (обновить до {formatTimecode(currentTime)})
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-slate-400 dark:text-zinc-500">
+                    Ctrl + Enter для сохранения
+                  </span>
+                </div>
+
+                <div className="relative">
+                  <textarea
+                    ref={noteInputRef}
+                    value={newNoteText}
+                    onChange={(e) => setNewNoteText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault()
+                        handleCreateNote()
+                      }
+                    }}
+                    placeholder="Напишите заметку или закладку к этому моменту..."
+                    rows={2}
+                    className="w-full liquid-glass-input rounded-xl p-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 outline-none resize-none transition-all leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={isSubmittingNote || !newNoteText.trim()}
+                    onClick={() => handleCreateNote()}
+                    className="px-3.5 py-1.5 rounded-xl liquid-btn-primary text-white text-xs font-semibold shadow-liquid-btn disabled:opacity-40 cursor-pointer transition-all flex items-center gap-1.5"
+                  >
+                    {isSubmittingNote ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5" />
+                    )}
+                    <span>Сохранить заметку</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Список заметок */}
+              <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
+                {notesLoading ? (
+                  <div className="flex items-center justify-center py-16 text-slate-500 gap-2 text-xs">
+                    <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
+                    <span>Загрузка заметок...</span>
+                  </div>
+                ) : notes.length > 0 ? (
+                  notes.map((note) => {
+                    const isEditing = editingNoteId === note.id
+                    const isNearCurrent = Math.abs(currentTime - note.timecode) < 5
+
+                    return (
+                      <motion.div
+                        key={note.id}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        className={`p-3.5 rounded-2xl border transition-all space-y-2.5 shadow-sm ${
+                          isNearCurrent
+                            ? "bg-cyan-500/10 border-cyan-500/50 shadow-cyan-500/5"
+                            : "liquid-glass-subtle border-slate-200/80 dark:border-white/[0.08] hover:border-slate-300 dark:hover:border-white/20"
+                        }`}
+                      >
+                        {/* Шапка заметки: Таймкод + Дата + Кнопки редактирования/удаления */}
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => seekTo(note.timecode)}
+                            className="px-2.5 py-1 rounded-lg liquid-btn-primary text-white text-xs font-mono font-bold flex items-center gap-1.5 shadow-liquid-btn cursor-pointer transition-all hover:scale-105"
+                          >
+                            <Play className="w-2.5 h-2.5 fill-current" />
+                            <span>[{formatTimecode(note.timecode)}]</span>
+                          </button>
+
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-400 dark:text-zinc-500 mr-1.5">
+                              {new Date(note.created_at).toLocaleTimeString("ru-RU", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+
+                            {!isEditing && (
+                              <>
+                                <Tooltip content="Редактировать заметку" position="top">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingNoteId(note.id)
+                                      setEditingNoteText(note.text)
+                                    }}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-white/60 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                </Tooltip>
+
+                                <Tooltip content="Удалить заметку" position="top">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteNote(note.id)}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white/60 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </Tooltip>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Содержимое заметки */}
+                        {isEditing ? (
+                          <div className="space-y-2 pt-1">
+                            <textarea
+                              value={editingNoteText}
+                              onChange={(e) => setEditingNoteText(e.target.value)}
+                              rows={3}
+                              className="w-full liquid-glass-input rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none resize-none leading-relaxed"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingNoteId(null)}
+                                className="px-2.5 py-1 rounded-xl liquid-btn-glass text-[11px] text-slate-600 dark:text-zinc-400 cursor-pointer"
+                              >
+                                Отмена
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateNote(note.id)}
+                                className="px-3 py-1 rounded-xl liquid-btn-primary text-white text-[11px] font-semibold cursor-pointer"
+                              >
+                                Сохранить
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
+                            {note.text}
+                          </p>
+                        )}
+                      </motion.div>
+                    )
+                  })
+                ) : (
+                  <div className="text-center py-16 text-xs text-slate-500 dark:text-zinc-400 space-y-3">
+                    <StickyNote className="w-8 h-8 text-cyan-500 mx-auto opacity-70" />
+                    <div>
+                      <p className="font-medium text-slate-700 dark:text-zinc-300">
+                        Пока нет заметок к этой лекции
+                      </p>
+                      <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-1">
+                        Создавайте персональные закладки с комментариями прямо по ходу просмотра видео.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => startAddNote(Math.floor(currentTime))}
+                      className="px-3.5 py-1.5 rounded-xl liquid-btn-primary text-white text-xs font-semibold shadow-liquid-btn cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Создать заметку на [{formatTimecode(currentTime)}]</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Содержимое Режима 3: Поиск по смыслу внутри лекции */}
           {rightTab === "search" && (
             <div className="flex-1 flex flex-col p-4 space-y-4 overflow-hidden">
               <div className="relative">
@@ -1226,7 +1916,7 @@ export const LectureWorkspace: React.FC<LectureWorkspaceProps> = ({
             </div>
           )}
 
-          {/* Содержимое Режима 3: Чат «Вопрос-ответ» (RAG) */}
+          {/* Содержимое Режима 4: Чат «Вопрос-ответ» (RAG) */}
           {rightTab === "chat" && (
             <div className="flex-1 flex flex-col overflow-hidden">
               {/* История сообщений */}

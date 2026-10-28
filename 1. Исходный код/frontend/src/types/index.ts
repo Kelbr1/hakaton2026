@@ -63,6 +63,7 @@ export interface Lecture {
   source_url?: string | null
   video_path?: string | null
   audio_path?: string | null
+  thumbnail_path?: string | null
   duration: number
   status: LectureStatus
   error_message?: string | null
@@ -116,4 +117,34 @@ export interface AskQuestionResponse {
     text: string
     score?: number
   }>
+}
+
+export interface QuizOption {
+  id: string
+  text: string
+}
+
+export interface QuizQuestion {
+  id: number
+  question: string
+  options: QuizOption[]
+  correct_option_id: string
+  explanation: string
+  timecode: number
+}
+
+export interface LectureQuiz {
+  lecture_id: number
+  lecture_title: string
+  total_questions: number
+  questions: QuizQuestion[]
+}
+
+export interface LectureNote {
+  id: number
+  lecture_id: number
+  user_id?: number | null
+  timecode: number
+  text: string
+  created_at: string
 }

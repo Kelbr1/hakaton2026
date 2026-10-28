@@ -3,6 +3,8 @@ import type {
   AskQuestionResponse,
   Category,
   Lecture,
+  LectureNote,
+  LectureQuiz,
   SearchResultItem,
   SystemStatus,
   User,
@@ -234,5 +236,41 @@ export const api = {
 
   getStreamUrl(lectureId: number): string {
     return `${API_BASE}/api/lectures/${lectureId}/stream`
+  },
+
+  getThumbnailUrl(lectureId: number): string {
+    return `${API_BASE}/api/lectures/${lectureId}/thumbnail`
+  },
+
+  async getLectureQuiz(lectureId: number, regenerate: boolean = false): Promise<LectureQuiz> {
+    const res = await axios.get<LectureQuiz>(`${API_BASE}/api/lectures/${lectureId}/quiz`, {
+      params: regenerate ? { regenerate: true } : {},
+    })
+    return res.data
+  },
+
+  // Заметки на таймкодах
+  async getNotes(lectureId: number): Promise<LectureNote[]> {
+    const res = await axios.get<LectureNote[]>(`${API_BASE}/api/lectures/${lectureId}/notes`)
+    return res.data
+  },
+
+  async createNote(lectureId: number, timecode: number, text: string): Promise<LectureNote> {
+    const res = await axios.post<LectureNote>(`${API_BASE}/api/lectures/${lectureId}/notes`, {
+      timecode,
+      text,
+    })
+    return res.data
+  },
+
+  async updateNote(lectureId: number, noteId: number, text: string): Promise<LectureNote> {
+    const res = await axios.put<LectureNote>(`${API_BASE}/api/lectures/${lectureId}/notes/${noteId}`, {
+      text,
+    })
+    return res.data
+  },
+
+  async deleteNote(lectureId: number, noteId: number): Promise<void> {
+    await axios.delete(`${API_BASE}/api/lectures/${lectureId}/notes/${noteId}`)
   },
 }

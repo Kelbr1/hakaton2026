@@ -116,6 +116,16 @@ def seed_demo_lecture(session: Session) -> Lecture:
     session.commit()
     session.refresh(lecture)
 
+    try:
+        from .media_utils import generate_thumbnail
+        thumb = generate_thumbnail(video_path, thumbnail_id=f"lec_{lecture.id}", duration=120.0)
+        if thumb:
+            lecture.thumbnail_path = f"backend/storage/thumbnails/{thumb.name}"
+            session.add(lecture)
+            session.commit()
+    except Exception:
+        pass
+
     raw_segments: List[Tuple[float, float, str]] = [
         (0.0, 6.5, "Здравствуйте! Разберем архитектуру Transformer."),
         (6.5, 14.0, "Статья Attention Is All You Need изменила весь ML."),
